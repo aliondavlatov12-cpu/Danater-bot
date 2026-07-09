@@ -333,7 +333,12 @@ app.add_handler(
         pattern="^(done|cancel)_"
     )
 )
-
+app.add_handler(
+    CallbackQueryHandler(
+        admin_menu,
+        pattern="^admin_"
+    )
+)
 app.add_handler(
     MessageHandler(
         filters.PHOTO,
