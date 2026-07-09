@@ -244,7 +244,53 @@ async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         caption=query.message.caption + "\n\nИҷро шуд."
     )
 
+async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
+    if update.message.from_user.id != ADMIN_ID:
+        await update.message.reply_text("❌ Шумо админ нестед.")
+        return
+
+    keyboard = [
+        [InlineKeyboardButton("📦 Заказҳо", callback_data="admin_orders")],
+        [InlineKeyboardButton("👥 Корбарон", callback_data="admin_users")],
+        [InlineKeyboardButton("📢 Рассылка", callback_data="admin_send")],
+        [InlineKeyboardButton("💰 Нархҳо", callback_data="admin_prices")]
+    ]
+
+    await update.message.reply_text(
+        "👑 Панели админ",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+    await query.answer()
+
+    if query.from_user.id != ADMIN_ID:
+        return
+
+    if query.data == "admin_orders":
+        orders = load_orders()
+        await query.message.reply_text(
+            f"📦 Ҳамагӣ заказҳо: {len(orders)}"
+        )
+
+    elif query.data == "admin_users":
+        await query.message.reply_text(
+            "👥 Ин функсияро баъд илова мекунем."
+        )
+
+    elif query.data == "admin_send":
+        await query.message.reply_text(
+            "📢 Ин функсияро баъд илова мекунем."
+        )
+
+    elif query.data == "admin_prices":
+        await query.message.reply_text(
+            "💰 Ин функсияро баъд илова мекунем."
+    )
 app = Application.builder().token(TOKEN).build()
 
 
@@ -254,7 +300,12 @@ app.add_handler(
         start
     )
 )
-
+app.add_handler(
+    CommandHandler(
+        "admin",
+        admin
+    )
+)
 app.add_handler(
     CallbackQueryHandler(
         buy,
