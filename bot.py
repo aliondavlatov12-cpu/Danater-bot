@@ -2,6 +2,7 @@ import json
 import os
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import BadRequest, NetworkError
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -32,13 +33,16 @@ products = {
 
 def load_orders():
     if os.path.exists(FILE):
-        with open(FILE, "r") as f:
-            return json.load(f)
+        try:
+            with open(FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
     return {}
 
 
 def save_orders(data):
-    with open(FILE, "w") as f:
+    with open(FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
 
 
@@ -68,7 +72,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except BadRequest:
+        pass
 
     keyboard = []
 
@@ -91,7 +98,10 @@ async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def choose_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except BadRequest:
+        pass
 
     number = query.data.split("_")[1]
 
@@ -126,7 +136,10 @@ async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def alif(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except BadRequest:
+        pass
 
     context.user_data["step"] = "photo"
 
@@ -188,7 +201,10 @@ async def get_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer()
+    except BadRequest:
+        pass
 
     action, order_id = query.data.split("_")
 
@@ -282,6 +298,15 @@ app.add_handler(
 )
 
 
+async def error_handler(update, context):
+    print(context.error)
+
+app.add_error_handler(error_handler)
+
 print("🔥 DANATER FREE FIRE кор карда истодааст")
 
-app.run_polling()
+try:
+    app.run_polling(drop_pending_updates=True)
+except NetworkError:
+    print("NetworkError: Интернет қатъ шуд.")
+    
