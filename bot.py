@@ -19,17 +19,39 @@ ADMIN_ID = 7659107145
 ALIIF = "917003888"
 
 FILE = "orders.json"
+USERS_FILE = "users.json"
+PRODUCTS_FILE = "products.json"
+def load_users():
+    if os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
+
+def save_users(users):
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(users, f, indent=4)
+def load_products():
+    if os.path.exists(PRODUCTS_FILE):
+        with open(PRODUCTS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
 
 
-products = {
-    "1": "💎 100 алмаз - 10 сомонӣ",
-    "2": "💎 310 алмаз - 30 сомонӣ",
-    "3": "💎 520 алмаз - 50 сомонӣ",
-    "4": "💎 1060 алмаз - 100 сомонӣ",
-    "5": "🎟 Ваучер 1 ҳафта - 450 алмаз - 18 сомонӣ",
-    "6": "🎟 Ваучер 1 моҳ - 2600 алмаз - 105 сомонӣ"
-}
+def save_products(products):
+    with open(PRODUCTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(products, f, ensure_ascii=False, indent=4)
+products = load_products()
+if not products:
+    products = {
+        "1": "💎 100 алмаз - 10 сомонӣ",
+        "2": "💎 310 алмаз - 30 сомонӣ",
+        "3": "💎 520 алмаз - 50 сомонӣ",
+        "4": "💎 1060 алмаз - 100 сомонӣ",
+        "5": "🎟 Ваучер 1 ҳафта - 450 алмаз - 18 сомонӣ",
+        "6": "🎟 Ваучер 1 моҳ - 2600 алмаз - 105 сомонӣ"
+    }
 
+    save_products(products)
 
 def load_orders():
     if os.path.exists(FILE):
@@ -51,8 +73,15 @@ def create_order():
     return str(len(orders) + 1)
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def  start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
+    users = load_users()
+
+    user_id = update.message.from_user.id
+
+    if user_id not in users:
+        users.append(user_id)
+        save_users(users)
     keyboard = [
         [
             InlineKeyboardButton(
@@ -112,9 +141,38 @@ async def choose_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎮 ID-и Free Fire-атро навис:"
     )
 
+async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
+    if update.message.from_user.id != ADMIN_ID:
+        return
+
+    users = load_users()
+
+    text = update.message.text
+
+    count = 0
+
+    for user_id in users:
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=text
+            )
+            count += 1
+        except:
+            pass
+
+    await update.message.reply_text(
+        f"✅ Рассылка фиристода шуд.\n👥 Ба {count} нафар"
+    )
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.user_data.get("send_message"):
 
+        await broadcast(update, context)
+
+        context.user_data["send_message"] = False
+
+        return
     if context.user_data.get("step") == "id":
 
         context.user_data["ff_id"] = update.message.text
@@ -254,8 +312,9 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📦 Заказҳо", callback_data="admin_orders")],
         [InlineKeyboardButton("👥 Корбарон", callback_data="admin_users")],
         [InlineKeyboardButton("📢 Рассылка", callback_data="admin_send")],
-        [InlineKeyboardButton("💰 Нархҳо", callback_data="admin_prices")]
-    ]
+        [InlineKeyboardButton("💰 Нархҳо", callback_data="admin_prices")],
+          [InlineKeyboardButton("✏️ Иваз кардани нарх", callback_data="change_prices")]
+      ]
 
     await update.message.reply_text(
         "👑 Панели админ",
@@ -272,25 +331,82 @@ async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if query.data == "admin_orders":
+
         orders = load_orders()
-        await query.message.reply_text(
-            f"📦 Ҳамагӣ заказҳо: {len(orders)}"
-        )
+
+        if not orders:
+            await query.message.reply_text(
+                "📦 Ҳоло заказ нест."
+            )
+            return
+
+        text = "📦 Ҳамаи заказҳо:\n\n"
+
+        for order_id, order in orders.items():
+
+            text += (
+                f"🆔 Заказ #{order_id}\n"
+                f"📦 {order.get('product')}\n"
+                f"🎮 ID: {order.get('ff_id')}\n"
+                f"👤 User ID: {order.get('client')}\n\n"
+            )
+
+        await query.message.reply_text(text)
+
 
     elif query.data == "admin_users":
+
+        users = load_users()
+
         await query.message.reply_text(
-            "👥 Ин функсияро баъд илова мекунем."
+            f"👥 Корбарон: {len(users)} нафар"
         )
+
 
     elif query.data == "admin_send":
+
         await query.message.reply_text(
-            "📢 Ин функсияро баъд илова мекунем."
+            "📢 Матни рассылкаро навис:"
         )
 
-    elif query.data == "admin_prices":
+        context.user_data["send_message"] = True
+    elif query.data.startswith("edit_price_"):
+
+        product_id = query.data.replace("edit_price_", "")
+
+        context.user_data["edit_price_id"] = product_id
+
         await query.message.reply_text(
-            "💰 Ин функсияро баъд илова мекунем."
-    )
+            "💰 Нархи навро навис:"
+        )
+    elif query.data == "change_prices":
+
+        await query.answer()
+
+        keyboard = []
+
+        for key, value in products.items():
+            keyboard.append(
+                [
+                    InlineKeyboardButton(
+                        value,
+                        callback_data=f"edit_price_{key}"
+                    )
+                ]
+            )
+
+        await query.message.reply_text(
+            "✏️ Кадом маҳсулотро иваз мекунӣ?",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    elif query.data == "admin_prices":
+
+        text = "💰 Нархҳои ҳозира:\n\n"
+
+        for key, value in products.items():
+            text += f"{key}. {value}\n"
+        
+        await query.message.reply_text(text)
 app = Application.builder().token(TOKEN).build()
 
 
@@ -336,7 +452,7 @@ app.add_handler(
 app.add_handler(
     CallbackQueryHandler(
         admin_menu,
-        pattern="^admin_"
+        pattern="^(admin_|change_prices)"
     )
 )
 app.add_handler(
@@ -365,4 +481,3 @@ try:
     app.run_polling(drop_pending_updates=True)
 except NetworkError:
     print("NetworkError: Интернет қатъ шуд.")
-    
