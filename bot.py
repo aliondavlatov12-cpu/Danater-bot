@@ -44,7 +44,7 @@ def save_products(products):
         json.dump(products, f, ensure_ascii=False, indent=4)
 products = load_products()
 if not products:
-products = {
+    products = {
     "1": "💎 100 алмаз - 10 сомонӣ",
     "2": "💎 310 алмаз - 30 сомонӣ",
     "3": "💎 520 алмаз - 50 сомонӣ",
