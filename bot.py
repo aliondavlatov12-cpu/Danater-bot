@@ -12,6 +12,8 @@ from telegram.ext import (
     filters
 )
 
+from threading import Thread
+from flask import Flask
 
 TOKEN = "8866087265:AAFulbHLhLwNcC3igxERA3-YbyWqKtSKQxY"
 
@@ -476,6 +478,22 @@ async def error_handler(update, context):
 app.add_error_handler(error_handler)
 
 print("🔥 DANATER FREE FIRE кор карда истодааст")
+
+web = Flask(__name__)
+
+@web.route("/")
+def home():
+    return "Bot is running 24/7"
+
+
+def run_web():
+    web.run(
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 8080))
+    )
+
+
+Thread(target=run_web).start()
 
 try:
     app.run_polling(drop_pending_updates=True)
