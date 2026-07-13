@@ -205,7 +205,7 @@ async def dcnext(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.message.reply_text(
         "🏦 Пардохт бо Душанбе Сити\n\n"
-        "📱 Рақам: +992 783 836 464\n\n"
+        "📱 Рақам: +992 783836464\n\n"
         "📸 Чеки пардохтро ҳамчун акс фиристед."
     )
 async def alif(update: Update, context: ContextTypes.DEFAULT_TYPE):
