@@ -462,6 +462,12 @@ app.add_handler(
 
 app.add_handler(
     CallbackQueryHandler(
+        dcnext,
+        pattern="^dcnext$"
+    )
+)
+app.add_handler(
+    CallbackQueryHandler(
         admin_action,
         pattern="^(done|cancel)_"
     )
