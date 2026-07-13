@@ -192,7 +192,7 @@ async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Усули пардохт:",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
-        async def dcnext(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def dcnext(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     query = update.callback_query
 
