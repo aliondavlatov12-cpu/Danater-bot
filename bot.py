@@ -182,18 +182,32 @@ async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["step"] = "check"
 
         keyboard = [
-            [
-                InlineKeyboardButton(
-                    "💳 Алиф",
-                    callback_data="alif"
-                )
-            ]
+    [
+        InlineKeyboardButton("💳 Алиф", callback_data="alif"),
+        InlineKeyboardButton("🏦 Душанбе Сити", callback_data="dcnext")
+    ]
         ]
 
         await update.message.reply_text(
             "Усули пардохт:",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+        async def dcnext(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+
+    try:
+        await query.answer()
+    except BadRequest:
+        pass
+
+    context.user_data["step"] = "photo"
+
+    await query.message.reply_text(
+        "🏦 Пардохт бо Душанбе Сити\n\n"
+        "📱 Рақам: +992 783 836 464\n\n"
+        "📸 Чеки пардохтро ҳамчун акс фиристед."
+    )
 async def alif(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     query = update.callback_query
