@@ -18,7 +18,7 @@ from telegram.ext import (
 # ⚙️ CONFIG
 # =========================================================
 
-TOKEN = "8732944768:AAEHKgxlUO3vqPhoDCd8DrJPvkfLSOH5c4E"
+TOKEN = "8732944768:AAFFDS03_q6DZrbCnlCONN2NiQLyBvVYWz0"
 
 CHANNEL_USERNAME = "@otzivi_danater1"
 CHANNEL_URL = "https://t.me/otzivi_danater1"
