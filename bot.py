@@ -650,7 +650,7 @@ async def handle_photo(update, context):
         f"💳 Пардохт: <b>{html.escape(payment_method)}</b>"
     )
 
-        keyboard = InlineKeyboardMarkup([[
+     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton("✅ Тасдиқ", callback_data=f"order_done:{order_id}"),
         InlineKeyboardButton("❌ Бекор", callback_data=f"order_cancel:{order_id}")
     ]])
