@@ -1,729 +1,1011 @@
 import json
 import os
-import re
+import logging
+from datetime import datetime
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.error import BadRequest, NetworkError
+from telegram.constants import ChatMemberStatus
 from telegram.ext import (
     Application,
     CommandHandler,
     CallbackQueryHandler,
     MessageHandler,
     ContextTypes,
-    filters
+    filters,
 )
 
-from threading import Thread
-from flask import Flask
+# =========================================================
+# ⚙️ CONFIG
+# =========================================================
 
-TOKEN = "8866087265:AAFulbHLhLwNcC3igxERA3-YbyWqKtSKQxY"
+TOKEN = "8732944768:AAEHKgxlUO3vqPhoDCd8DrJPvkfLSOH5c4E"
 
-ADMIN_ID = 7659107145
-ALIIF = "917003888"
+CHANNEL_USERNAME = "@otzivi_danater1"
+CHANNEL_URL = "https://t.me/otzivi_danater1"
 
-FILE = "orders.json"
+# Telegram ID-и админҳоро гузор.
+ADMIN_IDS = {
+    7659107145
+}
+
+ORDERS_FILE = "orders.json"
 USERS_FILE = "users.json"
-PRODUCTS_FILE = "products.json"
+PRICES_FILE = "prices.json"
 
-# Канали, ки корбар пеш аз истифодаи бот бояд обуна шавад.
-# Номи каналро бо канали худ иваз кун.
-REQUIRED_CHANNEL = "@otzivi_danater1"
+PAYMENT_NUMBERS = {
+    "alif": "+992917003888",
+    "city": "+992783836464",
+}
 
-async def is_subscribed(context, user_id):
+DEFAULT_PRODUCTS = {
+    "100": {"name": "💎 100 алмаз", "price": 10, "category": "diamonds"},
+    "310": {"name": "💎 310 алмаз", "price": 30, "category": "diamonds"},
+    "520": {"name": "💎 520 алмаз", "price": 50, "category": "diamonds"},
+    "1060": {"name": "💎 1060 алмаз", "price": 100, "category": "diamonds"},
+    "week": {"name": "🎟 Ваучер 1 ҳафта — 450 алмаз", "price": 18, "category": "vouchers"},
+    "month": {"name": "🎟 Ваучер 1 моҳ — 2600 алмаз", "price": 95, "category": "vouchers"},
+    "lite": {"name": "🎟 Ваучер Лайт — 90 алмаз", "price": 7, "category": "vouchers"},
+}
+
+logging.basicConfig(
+    format="%(asctime)s | %(levelname)s | %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
+
+
+# =========================================================
+# 💾 STORAGE
+# =========================================================
+
+def load_json(filename, default):
     try:
-        member = await context.bot.get_chat_member(REQUIRED_CHANNEL, user_id)
-        return member.status in ("member", "administrator", "creator")
-    except Exception:
-        return False
-
-def subscription_keyboard():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📢 Ба канал обуна шудан", url=f"https://t.me/{REQUIRED_CHANNEL.lstrip('@')}")],
-        [InlineKeyboardButton("✅ Санҷидани обуна", callback_data="check_subscription")]
-    ])
-
-async def require_subscription(update, context):
-    user = update.effective_user
-    if await is_subscribed(context, user.id):
-        return True
-
-    text = (
-        "🔒 Барои истифодаи бот аввал ба канали мо обуна шавед.\n\n"
-        "1️⃣ Ба канал дароед ва Subscribe-ро пахш кунед.\n"
-        "2️⃣ Баъд «✅ Санҷидани обуна»-ро пахш кунед."
-    )
-
-    if update.callback_query:
-        await update.callback_query.message.reply_text(
-            text, reply_markup=subscription_keyboard()
-        )
-    elif update.message:
-        await update.message.reply_text(
-            text, reply_markup=subscription_keyboard()
-        )
-    return False
-def load_users():
-    if os.path.exists(USERS_FILE):
-        with open(USERS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        # Мутобиқат бо users.json-и кӯҳна, ки танҳо ID дошт
-        result = []
-        for item in data:
-            if isinstance(item, dict):
-                result.append(item)
-            else:
-                result.append({
-                    "id": item,
-                    "username": None,
-                    "first_name": ""
-                })
-        return result
-    return []
-
-def save_users(users):
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(users, f, ensure_ascii=False, indent=4)
-def load_products():
-    if os.path.exists(PRODUCTS_FILE):
-        with open(PRODUCTS_FILE, "r", encoding="utf-8") as f:
+        if not os.path.exists(filename):
+            return default
+        with open(filename, "r", encoding="utf-8") as f:
             return json.load(f)
-    return {}
+    except Exception as e:
+        logger.error("Read %s error: %s", filename, e)
+        return default
+
+
+def save_json(filename, data):
+    temp = filename + ".tmp"
+    with open(temp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(temp, filename)
+
+
+def load_products():
+    saved = load_json(PRICES_FILE, {})
+    products = json.loads(json.dumps(DEFAULT_PRODUCTS))
+    if isinstance(saved, dict):
+        for product_id, data in saved.items():
+            if product_id in products and isinstance(data, dict):
+                if isinstance(data.get("price"), int):
+                    products[product_id]["price"] = data["price"]
+    return products
 
 
 def save_products(products):
-    with open(PRODUCTS_FILE, "w", encoding="utf-8") as f:
-        json.dump(products, f, ensure_ascii=False, indent=4)
-products = load_products()
-if not products:
-    products = {
-    "1": "💎 100 алмаз - 10 сомонӣ",
-    "2": "💎 310 алмаз - 30 сомонӣ",
-    "3": "💎 520 алмаз - 50 сомонӣ",
-    "4": "💎 1060 алмаз - 100 сомонӣ",
-    "5": "🎟 Ваучер 1 ҳафта - 450 алмаз - 18 сомонӣ",
-    "6": "🎟 Ваучер 1 моҳ - 2600 алмаз - 105 сомонӣ",
-    "7": "🎟 Ваучер Лайт - 90 алмаз - 7 сомонӣ"
-}
-
-    save_products(products)
-
-def load_orders():
-    if os.path.exists(FILE):
-        try:
-            with open(FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
+    save_json(PRICES_FILE, products)
 
 
-def save_orders(data):
-    with open(FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4)
+PRODUCTS = load_products()
 
 
-def create_order():
-    orders = load_orders()
-    return str(len(orders) + 1)
+# =========================================================
+# 👤 USERS
+# =========================================================
 
+def save_user(user):
+    users = load_json(USERS_FILE, {})
 
-async def  start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Backward compatibility: older bot versions may have saved users.json
+    # as a list. Convert it to the new dictionary format automatically.
+    if isinstance(users, list):
+        converted = {}
+        for item in users:
+            if isinstance(item, dict) and item.get("id") is not None:
+                converted[str(item["id"])] = item
+        users = converted
+    elif not isinstance(users, dict):
+        users = {}
 
-    if not await require_subscription(update, context):
-        return
-
-    users = load_users()
-
-    user = update.effective_user
-    user_id = user.id
-
-    # ID + username + номи корбарро нигоҳ медорем
-    found = next((u for u in users if u.get("id") == user_id), None)
-    profile = {
-        "id": user_id,
+    users[str(user.id)] = {
+        "id": user.id,
         "username": user.username,
-        "first_name": user.first_name or ""
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "updated": datetime.now().isoformat(),
     }
+    save_json(USERS_FILE, users)
 
-    if found:
-        found.update(profile)
-    else:
-        users.append(profile)
 
-    save_users(users)
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                "🛒 Хариди алмаз",
-                callback_data="buy"
-            )
-        ]
-    ]
+def is_admin(user_id):
+    return user_id in ADMIN_IDS
 
-    await update.message.reply_text(
-        "🔥 DANATER FREE FIRE 🔥\n\n"
-        "💎 Ба мағоза хуш омадед!",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+
+# =========================================================
+# 🔐 SUBSCRIPTION
+# =========================================================
+
+async def is_subscribed(bot, user_id):
+    try:
+        member = await bot.get_chat_member(
+            chat_id=CHANNEL_USERNAME,
+            user_id=user_id,
+        )
+        if member.status in (
+            ChatMemberStatus.MEMBER,
+            ChatMemberStatus.ADMINISTRATOR,
+            ChatMemberStatus.OWNER,
+        ):
+            return True
+
+        if (
+            member.status == ChatMemberStatus.RESTRICTED
+            and getattr(member, "is_member", False)
+        ):
+            return True
+
+        return False
+    except Exception as e:
+        logger.error("Subscription check error: %s", e)
+        return False
+
+
+def subscription_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(
+            "📢 Обуна шудан ба канал",
+            url=CHANNEL_URL
+        )],
+        [InlineKeyboardButton(
+            "✅ Ман обуна шудам",
+            callback_data="check_subscription"
+        )],
+    ])
+
+
+async def send_subscription_message(update):
+    text = (
+        "🔐 <b>Дастрасӣ маҳдуд аст</b>\n\n"
+        "Барои истифодаи бот аввал ба канали мо обуна шавед.\n\n"
+        "1️⃣ Ба канал дароед\n"
+        "2️⃣ Обуна шавед\n"
+        "3️⃣ «Ман обуна шудам»-ро пахш кунед\n\n"
+        "⚡️ Бот обунаро фавран месанҷад."
     )
 
-
-async def buy(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not await require_subscription(update, context):
-        return
-
-    query = update.callback_query
-    try:
-        await query.answer()
-    except BadRequest:
-        pass
-
-    keyboard = []
-
-    for k, v in products.items():
-        keyboard.append(
-            [
-                InlineKeyboardButton(
-                    v,
-                    callback_data=f"product_{k}"
-                )
-            ]
+    if update.callback_query:
+        await update.callback_query.message.edit_text(
+            text,
+            reply_markup=subscription_keyboard(),
+            parse_mode="HTML",
+        )
+    else:
+        await update.message.reply_text(
+            text,
+            reply_markup=subscription_keyboard(),
+            parse_mode="HTML",
         )
 
-    await query.message.reply_text(
-        "💎 Маҳсулотро интихоб кун:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+
+# =========================================================
+# 🏠 USER MENU
+# =========================================================
+
+def main_menu():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🛒 Хариди алмаз", callback_data="products")],
+        [InlineKeyboardButton("📦 Фармоишҳои ман", callback_data="my_orders")],
+        [InlineKeyboardButton("ℹ️ Маълумот", callback_data="info")],
+    ])
 
 
-async def choose_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def show_main_menu(update, context):
+    lines = [
+        "🔥 <b>DANATER FREE FIRE</b>",
+        "",
+        "🛍 <b>МАГАЗИНИ ОНЛАЙН</b>",
+        "💎 Алмазҳо ва ваучерҳо дар як ҷо",
+        "",
+        "<b>💰 НАРХҲОИ ҲОЗИРА:</b>",
+    ]
+    for product in PRODUCTS.values():
+        lines.append(f"• {product['name']} — <b>{product['price']} сомонӣ</b>")
+    lines += [
+        "",
+        "⚡️ Интихоб кунед ва фармоиш диҳед:",
+    ]
+    text = "\n".join(lines)
+    if update.callback_query:
+        await update.callback_query.message.edit_text(
+            text, reply_markup=main_menu(), parse_mode="HTML"
+        )
+    else:
+        await update.message.reply_text(
+            text, reply_markup=main_menu(), parse_mode="HTML"
+        )
 
-    if not await require_subscription(update, context):
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
+    save_user(update.effective_user)
+
+    if not await is_subscribed(context.bot, update.effective_user.id):
+        await send_subscription_message(update)
         return
 
+    await show_main_menu(update, context)
+
+
+async def check_subscription(update, context):
     query = update.callback_query
-    try:
-        await query.answer()
-    except BadRequest:
-        pass
+    await query.answer()
 
-    number = query.data.split("_")[1]
-
-    context.user_data["product"] = products[number]
-    context.user_data["step"] = "id"
-
-    await query.message.reply_text(
-        "🎮 ID-и Free Fire-атро навис:"
-    )
-
-async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if update.message.from_user.id != ADMIN_ID:
+    if not await is_subscribed(context.bot, query.from_user.id):
+        await query.answer(
+            "❌ Шумо ҳоло ба канал обуна нашудаед!",
+            show_alert=True,
+        )
         return
 
-    users = load_users()
+    await query.answer("✅ Обуна тасдиқ шуд!")
+    await show_main_menu(update, context)
 
-    text = update.message.text
 
-    count = 0
+# =========================================================
+# 💎 PRODUCTS
+# =========================================================
 
-    for user in users:
-        user_id = user.get("id") if isinstance(user, dict) else user
-        try:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=text
-            )
-            count += 1
-        except:
-            pass
+def category_keyboard(category):
+    keyboard = []
+    for product_id, product in PRODUCTS.items():
+        if category == "all" or product["category"] == category:
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"{product['name']} — {product['price']} сомонӣ",
+                    callback_data=f"buy:{product_id}",
+                )
+            ])
+    keyboard.append([
+        InlineKeyboardButton("⬅️ Бозгашт", callback_data="menu")
+    ])
+    return InlineKeyboardMarkup(keyboard)
+
+
+async def products(update, context):
+    query = update.callback_query
+    await query.answer()
+    await query.message.edit_text(
+        "🛒 <b>МАГАЗИН — АЛМАЗҲО ВА ВАУЧЕРҲО</b>\n\n"
+        "💎 Ҳамаи маҳсулотҳо дар як ҷо. Маҳсулоти лозимаро интихоб кунед:",
+        reply_markup=category_keyboard("all"),
+        parse_mode="HTML",
+    )
+
+
+async def vouchers(update, context):
+    # Барои backward compatibility бо callback-и версияҳои кӯҳна.
+    await products(update, context)
+
+
+async def buy_product(update, context):
+    query = update.callback_query
+    await query.answer()
+
+    product_id = query.data.split(":", 1)[1]
+    product = PRODUCTS.get(product_id)
+
+    if not product:
+        await query.message.reply_text("❌ Маҳсулот ёфт нашуд.")
+        return
+
+    context.user_data["product_id"] = product_id
+    await query.message.edit_text(
+        "🛒 <b>ФАРМОИШ</b>\n\n"
+        f"📦 {product['name']}\n"
+        f"💰 Нарх: <b>{product['price']} сомонӣ</b>\n\n"
+        "🎮 Free Fire ID-и худро фиристед:",
+        parse_mode="HTML",
+    )
+
+
+# =========================================================
+# 🎮 ORDER FLOW
+# =========================================================
+
+async def receive_ff_id(update, context):
+    product_id = context.user_data.get("product_id")
+    if not product_id:
+        return
+
+    ff_id = update.message.text.strip()
+    if not ff_id.isdigit() or not (5 <= len(ff_id) <= 15):
+        await update.message.reply_text(
+            "❌ Free Fire ID нодуруст аст.\n"
+            "Танҳо рақам, одатан 5–15 рақам фиристед."
+        )
+        return
+
+    context.user_data["ff_id"] = ff_id
+    product = PRODUCTS[product_id]
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("💳 Alif", callback_data="pay:alif")],
+        [InlineKeyboardButton("💳 Dushanbe City", callback_data="pay:city")],
+        [InlineKeyboardButton("❌ Бекор кардан", callback_data="cancel_order")],
+    ])
 
     await update.message.reply_text(
-        f"✅ Рассылка фиристода шуд.\n👥 Ба {count} нафар"
+        "✅ <b>Маълумот қабул шуд</b>\n\n"
+        f"📦 {product['name']}\n"
+        f"💰 {product['price']} сомонӣ\n"
+        f"🎮 Free Fire ID: <code>{ff_id}</code>\n\n"
+        "💳 Усули пардохтро интихоб кунед:",
+        reply_markup=keyboard,
+        parse_mode="HTML",
     )
-async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Агар админ нархро иваз карда истода бошад
-    if context.user_data.get("edit_price_id"):
-        product_id = context.user_data["edit_price_id"]
 
-        if product_id not in products:
-            context.user_data.pop("edit_price_id", None)
-            await update.message.reply_text("❌ Маҳсулот ёфт нашуд.")
-            return
 
-        raw_price = update.message.text.strip().replace(",", ".")
+async def choose_payment(update, context):
+    query = update.callback_query
+    await query.answer()
+
+    payment = query.data.split(":", 1)[1]
+    product_id = context.user_data.get("product_id")
+    ff_id = context.user_data.get("ff_id")
+
+    if not product_id or not ff_id:
+        await query.message.reply_text(
+            "❌ Фармоиш нопурра аст. /start-ро пахш кунед."
+        )
+        return
+
+    context.user_data["payment"] = payment
+    product = PRODUCTS[product_id]
+    payment_name = "Alif" if payment == "alif" else "Dushanbe City"
+    number = PAYMENT_NUMBERS[payment]
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📸 Ман чекро мефиристам", callback_data="receipt_help")],
+        [InlineKeyboardButton("❌ Бекор кардан", callback_data="cancel_order")],
+    ])
+
+    await query.message.edit_text(
+        "💳 <b>ПАРДОХТ</b>\n\n"
+        f"📦 {product['name']}\n"
+        f"💰 Нарх: <b>{product['price']} сомонӣ</b>\n"
+        f"🎮 Free Fire ID: <code>{ff_id}</code>\n"
+        f"💳 Усул: <b>{payment_name}</b>\n"
+        f"📱 Рақами пардохт: <code>{number}</code>\n\n"
+        "1️⃣ Ба рақами боло пардохт кунед.\n"
+        "2️⃣ Скриншоти чекро ҳамчун <b>Photo</b> фиристед.",
+        reply_markup=keyboard,
+        parse_mode="HTML",
+    )
+
+
+async def receipt_help(update, context):
+    query = update.callback_query
+    await query.answer("Ҳоло скриншоти чекро фиристед.")
+    await query.message.reply_text(
+        "📸 Акнун скриншоти чеки пардохтро ҳамчун Photo фиристед."
+    )
+
+
+async def receive_receipt(update, context):
+    product_id = context.user_data.get("product_id")
+    ff_id = context.user_data.get("ff_id")
+    payment = context.user_data.get("payment")
+
+    if not product_id or not ff_id or not payment:
+        return
+
+    product = PRODUCTS[product_id]
+    user = update.effective_user
+
+    orders = load_json(ORDERS_FILE, [])
+    if not isinstance(orders, list):
+        orders = []
+
+    order_id = (max([int(o.get("order_id", 0)) for o in orders] or [0]) + 1)
+    username = f"@{user.username}" if user.username else "Надорад"
+    payment_name = "Alif" if payment == "alif" else "Dushanbe City"
+
+    order = {
+        "order_id": order_id,
+        "user_id": user.id,
+        "username": username,
+        "first_name": user.first_name,
+        "ff_id": ff_id,
+        "product_id": product_id,
+        "product": product["name"],
+        "price": product["price"],
+        "payment": payment_name,
+        "status": "pending",
+        "created": datetime.now().isoformat(),
+    }
+    orders.append(order)
+    save_json(ORDERS_FILE, orders)
+
+    photo = update.message.photo[-1]
+    caption = (
+        "🆕 <b>ЗАКАЗИ НАВ!</b>\n\n"
+        f"🧾 Заказ: <b>#{order_id}</b>\n"
+        f"👤 Ном: {user.first_name}\n"
+        f"🔗 Username: {username}\n"
+        f"🆔 Telegram ID: <code>{user.id}</code>\n"
+        f"🎮 Free Fire ID: <code>{ff_id}</code>\n\n"
+        f"📦 {product['name']}\n"
+        f"💰 {product['price']} сомонӣ\n"
+        f"💳 Пардохт: {payment_name}\n"
+        "⏳ Статус: <b>Интизорӣ</b>"
+    )
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Тасдиқ", callback_data=f"admin_done:{order_id}"),
+            InlineKeyboardButton("❌ Рад", callback_data=f"admin_cancel:{order_id}"),
+        ],
+    ])
+
+    sent = 0
+    for admin_id in ADMIN_IDS:
         try:
-            price = float(raw_price)
-            if price < 0:
+            await context.bot.send_photo(
+                chat_id=admin_id,
+                photo=photo.file_id,
+                caption=caption,
+                parse_mode="HTML",
+                reply_markup=keyboard,
+            )
+            sent += 1
+        except Exception as e:
+            logger.error("Admin notification error: %s", e)
+
+    await update.message.reply_text(
+        "✅ <b>ФАРМОИШ ҚАБУЛ ШУД!</b>\n\n"
+        f"🧾 Рақами фармоиш: <b>#{order_id}</b>\n"
+        f"📦 {product['name']}\n"
+        f"💰 {product['price']} сомонӣ\n\n"
+        "⏳ Админ чекро месанҷад.",
+        parse_mode="HTML",
+    )
+    context.user_data.clear()
+
+
+# =========================================================
+# 👨‍💼 ADMIN PANEL
+# =========================================================
+
+def admin_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📦 Фармоишҳо", callback_data="admin_orders"),
+         InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")],
+        [InlineKeyboardButton("👥 Корбарон", callback_data="admin_users"),
+         InlineKeyboardButton("💰 Нархҳо", callback_data="admin_prices")],
+        [InlineKeyboardButton("📢 Рассылка", callback_data="admin_broadcast"),
+         InlineKeyboardButton("💳 Пардохтҳо", callback_data="admin_payments")],
+        [InlineKeyboardButton("🔄 Навсозии нархҳо", callback_data="admin_prices")],
+    ])
+
+
+async def admin_command(update, context):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ Дастрасӣ манъ аст.")
+        return
+
+    await update.message.reply_text(
+        "👑 <b>ПАНЕЛИ ADMIN — PROFESSIONAL V2</b>\n\n"
+        "Аз меню амали лозимаро интихоб кунед:",
+        reply_markup=admin_keyboard(),
+        parse_mode="HTML",
+    )
+
+
+async def admin_orders(update, context):
+    query = update.callback_query
+    orders = load_json(ORDERS_FILE, [])
+    if not isinstance(orders, list):
+        orders = []
+
+    if not orders:
+        text = "📦 <b>ФАРМОИШҲО</b>\n\nҲоло фармоиш нест."
+    else:
+        status_names = {
+            "pending": "⏳ Интизорӣ",
+            "completed": "✅ Иҷро шуд",
+            "cancelled": "❌ Рад шуд",
+        }
+        recent = orders[-15:]
+        lines = ["📦 <b>ФАРМОИШҲОИ ОХИРИН</b>\n"]
+        for o in reversed(recent):
+            lines.append(
+                f"🧾 <b>#{o.get('order_id')}</b> — {status_names.get(o.get('status'), '❓')}\n"
+                f"📦 {o.get('product')}\n"
+                f"💰 {o.get('price')} сомонӣ\n"
+                f"👤 {o.get('username', 'Надорад')}\n"
+                f"🎮 <code>{o.get('ff_id')}</code>\n"
+            )
+        text = "\n".join(lines)
+
+    await query.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Навсозӣ", callback_data="admin_orders")],
+            [InlineKeyboardButton("⬅️ Панели админ", callback_data="admin_home")],
+        ]),
+        parse_mode="HTML",
+    )
+
+
+async def admin_stats(update, context):
+    query = update.callback_query
+    orders = load_json(ORDERS_FILE, [])
+    users = load_json(USERS_FILE, {})
+    if not isinstance(orders, list):
+        orders = []
+    if not isinstance(users, dict):
+        users = {}
+
+    completed = [o for o in orders if o.get("status") == "completed"]
+    pending = [o for o in orders if o.get("status") == "pending"]
+    cancelled = [o for o in orders if o.get("status") == "cancelled"]
+    revenue = sum(float(o.get("price", 0)) for o in completed)
+
+    text = (
+        "📊 <b>СТАТИСТИКА</b>\n\n"
+        f"👥 Корбарон: <b>{len(users)}</b>\n"
+        f"📦 Ҳамаи фармоишҳо: <b>{len(orders)}</b>\n"
+        f"⏳ Интизорӣ: <b>{len(pending)}</b>\n"
+        f"✅ Иҷрошуда: <b>{len(completed)}</b>\n"
+        f"❌ Радшуда: <b>{len(cancelled)}</b>\n"
+        f"💰 Даромади тасдиқшуда: <b>{revenue:g} сомонӣ</b>"
+    )
+    await query.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅️ Панели админ", callback_data="admin_home")]
+        ]),
+        parse_mode="HTML",
+    )
+
+
+async def admin_users(update, context):
+    query = update.callback_query
+    users = load_json(USERS_FILE, {})
+    if not isinstance(users, dict):
+        users = {}
+
+    lines = [f"👥 <b>КОРБАРОН: {len(users)}</b>\n"]
+    for u in list(users.values())[-30:]:
+        username = f"@{u.get('username')}" if u.get("username") else "Надорад"
+        lines.append(
+            f"• {u.get('first_name', '—')} | {username} | <code>{u.get('id')}</code>"
+        )
+
+    await query.message.edit_text(
+        "\n".join(lines),
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅️ Панели админ", callback_data="admin_home")]
+        ]),
+        parse_mode="HTML",
+    )
+
+
+async def admin_prices(update, context):
+    query = update.callback_query
+    keyboard = []
+    text = "💰 <b>ИДОРАКУНИИ НАРХҲО</b>\n\n"
+
+    for product_id, product in PRODUCTS.items():
+        text += f"🔹 {product['name']} — <b>{product['price']} сомонӣ</b>\n"
+        keyboard.append([
+            InlineKeyboardButton(
+                f"✏️ {product['name']}",
+                callback_data=f"edit_price:{product_id}"
+            )
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton("⬅️ Панели админ", callback_data="admin_home")
+    ])
+
+    await query.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="HTML",
+    )
+
+
+async def edit_price_start(update, context):
+    query = update.callback_query
+    product_id = query.data.split(":", 1)[1]
+    product = PRODUCTS.get(product_id)
+
+    if not product:
+        await query.answer("Маҳсулот ёфт нашуд.", show_alert=True)
+        return
+
+    context.user_data["edit_price_id"] = product_id
+    await query.answer()
+    await query.message.reply_text(
+        f"✏️ Нархи нав барои:\n<b>{product['name']}</b>\n\n"
+        "Танҳо рақам фиристед. Масалан: <code>25</code>",
+        parse_mode="HTML",
+    )
+
+
+async def receive_admin_text(update, context):
+    if not is_admin(update.effective_user.id):
+        return
+
+    # 1) Иваз кардани нарх
+    edit_id = context.user_data.get("edit_price_id")
+    if edit_id:
+        raw = update.message.text.strip().replace(",", ".")
+        try:
+            price = float(raw)
+            if price <= 0 or price > 100000:
                 raise ValueError
+            if price.is_integer():
+                price = int(price)
         except ValueError:
             await update.message.reply_text(
-                "❌ Нарх нодуруст аст.\n\nМасалан: 25 ё 25.5"
+                "❌ Нарх нодуруст аст. Масалан: <code>25</code>",
+                parse_mode="HTML",
             )
             return
 
-        price_text = str(int(price)) if price.is_integer() else str(price)
-
-        # Иваз кардани танҳо нархи охири маҳсулот.
-        old_value = products[product_id]
-        new_value = re.sub(
-            r"[-–—]?\s*\d+(?:[.,]\d+)?\s*сомонӣ\s*$",
-            f" - {price_text} сомонӣ",
-            old_value
-        )
-
-        # Агар маҳсулот формати дигар дошта бошад, нархи навро ба охир мегузорем.
-        if new_value == old_value:
-            new_value = f"{old_value} - {price_text} сомонӣ"
-
-        products[product_id] = new_value
-        save_products(products)
-
+        PRODUCTS[edit_id]["price"] = price
+        save_products(PRODUCTS)
+        product_name = PRODUCTS[edit_id]["name"]
         context.user_data.pop("edit_price_id", None)
 
         await update.message.reply_text(
-            "✅ Нарх бомуваффақият иваз шуд!\n\n"
-            f"📦 {new_value}"
+            "✅ <b>НАРХ ИВАЗ ШУД!</b>\n\n"
+            f"📦 {product_name}\n"
+            f"💰 Нархи нав: <b>{price} сомонӣ</b>",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("💰 Дидани нархҳо", callback_data="admin_prices")],
+                [InlineKeyboardButton("👑 Панели админ", callback_data="admin_home")],
+            ]),
+            parse_mode="HTML",
         )
         return
 
-    # Рассылка
-    if context.user_data.get("send_message"):
-        await broadcast(update, context)
-        context.user_data["send_message"] = False
-        return
+    # 2) Рассылка
+    if context.user_data.get("broadcast_mode"):
+        text = update.message.text.strip()
+        if not text:
+            return
 
-    # Қадами гирифтани Free Fire ID
-    if context.user_data.get("step") == "id":
-        context.user_data["ff_id"] = update.message.text.strip()
-        context.user_data["step"] = "check"
+        users = load_json(USERS_FILE, {})
+        success = 0
+        failed = 0
 
-        keyboard = [
-            [
-                InlineKeyboardButton("💳 Алиф", callback_data="alif"),
-                InlineKeyboardButton("🏦 Душанбе Сити", callback_data="dcnext")
-            ]
-        ]
+        await update.message.reply_text("📢 Рассылка оғоз шуд...")
+
+        for user_id in users.keys():
+            try:
+                await context.bot.send_message(
+                    chat_id=int(user_id),
+                    text=text,
+                )
+                success += 1
+            except Exception:
+                failed += 1
+
+        context.user_data.pop("broadcast_mode", None)
 
         await update.message.reply_text(
-            "Усули пардохт:",
-            reply_markup=InlineKeyboardMarkup(keyboard)
+            "📢 <b>РАССЫЛКА ТАМOM ШУД</b>\n\n"
+            f"✅ Расид: <b>{success}</b>\n"
+            f"❌ Нарасид: <b>{failed}</b>",
+            parse_mode="HTML",
         )
+
+
+async def admin_broadcast_start(update, context):
+    query = update.callback_query
+    context.user_data["broadcast_mode"] = True
+    await query.answer()
+    await query.message.reply_text(
+        "📢 Матни рассылкаро фиристед.\n\n"
+        "❌ Барои бекор кардан: /cancel"
+    )
+
+
+async def cancel_command(update, context):
+    context.user_data.clear()
+    await update.message.reply_text("❌ Амали ҷорӣ бекор карда шуд.")
+
+
+async def admin_payments(update, context):
+    query = update.callback_query
+    await query.message.edit_text(
+        "💳 <b>ПАРДОХТҲО</b>\n\n"
+        f"Alif: <code>{PAYMENT_NUMBERS['alif']}</code>\n"
+        f"Dushanbe City: <code>{PAYMENT_NUMBERS['city']}</code>\n\n"
+        "Барои тағйири рақамҳо онҳоро дар қисми CONFIG-и файл иваз кунед.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅️ Панели админ", callback_data="admin_home")]
+        ]),
+        parse_mode="HTML",
+    )
+
+
+async def admin_home_callback(update, context):
+    query = update.callback_query
+    await query.answer()
+    if not is_admin(query.from_user.id):
+        return
+    await query.message.edit_text(
+        "👑 <b>ПАНЕЛИ ADMIN — PROFESSIONAL V2</b>\n\n"
+        "Аз меню амали лозимаро интихоб кунед:",
+        reply_markup=admin_keyboard(),
+        parse_mode="HTML",
+    )
+
+
+# =========================================================
+# ✅ ORDER ACTION
+# =========================================================
+
+async def admin_order_action(update, context):
+    query = update.callback_query
+    if not is_admin(query.from_user.id):
+        await query.answer("❌ Дастрасӣ манъ аст.", show_alert=True)
         return
 
-    # Агар бот интизори ягон матни дигар набошад.
-    await update.message.reply_text(
-        "ℹ️ Лутфан аз менюи бот истифода баред."
+    await query.answer()
+    action, order_id = query.data.split(":", 1)
+
+    orders = load_json(ORDERS_FILE, [])
+    found = next(
+        (o for o in orders if str(o.get("order_id")) == str(order_id)),
+        None,
     )
 
-async def dcnext(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    query = update.callback_query
-
-    try:
-        await query.answer()
-    except BadRequest:
-        pass
-
-    context.user_data["payment"] = "Душанбе Сити"
-    context.user_data["step"] = "photo"
-
-    await query.message.reply_text(
-        "🏦 Пардохт бо Душанбе Сити\n\n"
-        "📱 Рақам: +992 783836464\n\n"
-        "📸 Чеки пардохтро ҳамчун акс фиристед."
-    )
-async def alif(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    query = update.callback_query
-    try:
-        await query.answer()
-    except BadRequest:
-        pass
-
-    context.user_data["payment"] = "Алиф"
-    context.user_data["step"] = "photo"
-
-    await query.message.reply_text(
-        "💳 Пардохт бо Алиф\n\n"
-        f"📱 Рақам: {ALIIF}\n\n"
-        "Чеки пардохтро ҳамчун акс фирист."
-    )
-
-
-async def get_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if context.user_data.get("step") != "photo":
+    if not found:
+        await query.message.reply_text("❌ Фармоиш ёфт нашуд.")
         return
 
-    order_id = create_order()
+    if found.get("status") != "pending":
+        await query.answer("Ин фармоиш аллакай коркард шудааст.", show_alert=True)
+        return
 
-    orders = load_orders()
+    if action == "admin_done":
+        found["status"] = "completed"
+        status_text = "✅ ТАСДИҚ ШУД"
+        user_text = (
+            f"✅ Фармоиши <b>#{order_id}</b> тасдиқ шуд!\n\n"
+            "Фармоиши шумо иҷро мешавад."
+        )
+    else:
+        found["status"] = "cancelled"
+        status_text = "❌ РАД ШУД"
+        user_text = (
+            f"❌ Фармоиши <b>#{order_id}</b> рад шуд.\n\n"
+            "Агар савол дошта бошед, бо админ тамос гиред."
+        )
 
-    orders[order_id] = {
-        "client": update.message.from_user.id,
-        "username": update.message.from_user.username,
-        "name": update.message.from_user.full_name,
-        "product": context.user_data.get("product"),
-        "ff_id": context.user_data.get("ff_id"),
-        "payment": context.user_data.get("payment"),
-        "status": "pending"
-    }
+    found["processed_at"] = datetime.now().isoformat()
+    save_json(ORDERS_FILE, orders)
 
-    save_orders(orders)
+    try:
+        await context.bot.send_message(
+            chat_id=found["user_id"],
+            text=user_text,
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.error("User notification error: %s", e)
 
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                "✅ Дода шуд",
-                callback_data=f"done_{order_id}"
-            ),
-            InlineKeyboardButton(
-                "❌ Рад шуд",
-                callback_data=f"cancel_{order_id}"
-            )
-        ]
+    try:
+        await query.message.edit_caption(
+            caption=(query.message.caption or "") + f"\n\n<b>{status_text}</b>",
+            parse_mode="HTML",
+            reply_markup=None,
+        )
+    except Exception:
+        pass
+
+
+# =========================================================
+# 📦 MY ORDERS
+# =========================================================
+
+async def my_orders(update, context):
+    query = update.callback_query
+    await query.answer()
+
+    orders = load_json(ORDERS_FILE, [])
+    user_orders = [
+        o for o in orders
+        if o.get("user_id") == query.from_user.id
     ]
 
-    username = update.message.from_user.username
-    username_text = f"@{username}" if username else "надорад"
+    status_names = {
+        "pending": "⏳ Интизорӣ",
+        "completed": "✅ Иҷро шуд",
+        "cancelled": "❌ Рад шуд",
+    }
 
-    await context.bot.send_photo(
-        chat_id=ADMIN_ID,
-        photo=update.message.photo[-1].file_id,
-        caption=(
-            f"📩 Фармоиш #{order_id}\n\n"
-            f"📦 {context.user_data.get('product')}\n"
-            f"🎮 ID: {context.user_data.get('ff_id')}\n"
-            f"👤 {update.message.from_user.first_name}\n"
-            f"🔗 Username: {username_text}\n"
-            f"🆔 User ID: {update.message.from_user.id}"
-        ),
-        reply_markup=InlineKeyboardMarkup(keyboard)
+    if not user_orders:
+        text = "📦 <b>ФАРМОИШҲОИ МАН</b>\n\nҲоло фармоиш надоред."
+    else:
+        lines = ["📦 <b>ФАРМОИШҲОИ МАН</b>\n"]
+        for order in user_orders[-10:]:
+            lines.append(
+                f"🧾 #{order.get('order_id')}\n"
+                f"📦 {order.get('product')}\n"
+                f"💰 {order.get('price')} сомонӣ\n"
+                f"📌 {status_names.get(order.get('status'), '❓')}\n"
+            )
+        text = "\n".join(lines)
+
+    await query.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅️ Бозгашт", callback_data="menu")]
+        ]),
+        parse_mode="HTML",
     )
 
-    await update.message.reply_text(
-        "✅ Чек ба админ фиристода шуд."
-    )
 
+# =========================================================
+# ℹ️ INFO / CANCEL
+# =========================================================
 
-
-async def check_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def info(update, context):
     query = update.callback_query
     await query.answer()
-    if await is_subscribed(context, query.from_user.id):
-        await query.message.reply_text(
-            "✅ Обуна тасдиқ шуд!\n\n/start-ро пахш кунед."
-        )
-    else:
-        await query.message.reply_text(
-            "❌ Шумо ҳоло ба канал обуна нашудаед.",
-            reply_markup=subscription_keyboard()
-        )
-
-async def admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    query = update.callback_query
-    try:
-        await query.answer()
-    except BadRequest:
-        pass
-
-    action, order_id = query.data.split("_")
-
-    orders = load_orders()
-
-    if order_id not in orders:
-        return
-
-    client_id = orders[order_id]["client"]
-
-
-    if action == "done":
-        orders[order_id]["status"] = "done"
-        save_orders(orders)
-
-        await context.bot.send_message(
-            chat_id=client_id,
-            text="✅ Алмазҳо дода шуданд. Раҳмат!",
-            reply_markup=InlineKeyboardMarkup(
-                [
-                    [
-                        InlineKeyboardButton(
-                            "🛒 Хариди нав",
-                            callback_data="buy"
-                        )
-                    ]
-                ]
-            )
-        )
-
-    else:
-        orders[order_id]["status"] = "cancelled"
-        save_orders(orders)
-
-        await context.bot.send_message(
-            chat_id=client_id,
-            text="❌ Пардохт рад шуд."
-        )
-
-    await query.edit_message_caption(
-        caption=query.message.caption + "\n\nИҷро шуд."
-    )
-
-async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if update.message.from_user.id != ADMIN_ID:
-        await update.message.reply_text("❌ Шумо админ нестед.")
-        return
-
-    keyboard = [
-        [InlineKeyboardButton("📦 Заказҳо", callback_data="admin_orders")],
-        [InlineKeyboardButton("👥 Корбарон", callback_data="admin_users")],
-        [InlineKeyboardButton("📢 Рассылка", callback_data="admin_send")],
-        [InlineKeyboardButton("💰 Нархҳо", callback_data="admin_prices")],
-        [InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")],
-          [InlineKeyboardButton("✏️ Иваз кардани нарх", callback_data="change_prices")]
-      ]
-
-    await update.message.reply_text(
-        "👑 Панели админ",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+    await query.message.edit_text(
+        "ℹ️ <b>DANATER FREE FIRE</b>\n\n"
+        "💎 Хариди алмаз\n"
+        "🎟 Хариди ваучер\n"
+        "💳 Alif / Dushanbe City\n"
+        "📦 Пайгирии фармоиш\n"
+        "🔐 Санҷиши автоматии обуна\n\n"
+        "Барои саволҳо бо админ тамос гиред.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅️ Бозгашт", callback_data="menu")]
+        ]),
+        parse_mode="HTML",
     )
 
 
-async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
+async def cancel_order(update, context):
     query = update.callback_query
     await query.answer()
-
-    if query.from_user.id != ADMIN_ID:
-        return
-
-    if query.data == "admin_orders":
-
-        orders = load_orders()
-
-        if not orders:
-            await query.message.reply_text(
-                "📦 Ҳоло заказ нест."
-            )
-            return
-
-        text = "📦 Ҳамаи заказҳо:\n\n"
-
-        for order_id, order in orders.items():
-
-            text += (
-                f"🆔 Заказ #{order_id}\n"
-                f"📦 {order.get('product')}\n"
-                f"🎮 Free Fire ID: {order.get('ff_id')}\n"
-                f"👤 {order.get('name') or 'Ном нест'}\n"
-                f"🔗 @{order.get('username')}\n" if order.get('username') else
-                f"🆔 Заказ #{order_id}\n"
-                f"📦 {order.get('product')}\n"
-                f"🎮 Free Fire ID: {order.get('ff_id')}\n"
-                f"👤 {order.get('name') or 'Ном нест'}\n"
-                f"🔗 username надорад\n"
-            )
-            text += (
-                f"🆔 Telegram ID: {order.get('client')}\n"
-                f"💳 Пардохт: {order.get('payment') or 'номаълум'}\n"
-                f"📌 Статус: {order.get('status', 'pending')}\n\n"
-            )
-
-        await query.message.reply_text(text)
-
-
-    elif query.data == "admin_users":
-
-        users = load_users()
-
-        if not users:
-            await query.message.reply_text("👥 Ҳоло корбар нест.")
-            return
-
-        text = "👥 Корбарон:\n\n"
-        for i, user in enumerate(users, 1):
-            user_id = user.get("id") if isinstance(user, dict) else user
-            username = user.get("username") if isinstance(user, dict) else None
-            first_name = user.get("first_name", "") if isinstance(user, dict) else ""
-            username_text = f"@{username}" if username else "надорад"
-
-            text += (
-                f"{i}. 👤 {first_name or 'Бе ном'}\n"
-                f"🔗 Username: {username_text}\n"
-                f"🆔 ID: {user_id}\n\n"
-            )
-
-        await query.message.reply_text(text)
-
-
-    elif query.data == "admin_stats":
-        users = load_users()
-        orders = load_orders()
-        total = len(orders)
-        done = sum(1 for o in orders.values() if o.get("status") == "done")
-        pending = sum(1 for o in orders.values() if o.get("status", "pending") == "pending")
-        cancelled = sum(1 for o in orders.values() if o.get("status") == "cancelled")
-        await query.message.reply_text(
-            "📊 Статистика\\n\\n"
-            f"👥 Корбарон: {len(users)}\\n"
-            f"📦 Ҳамаи заказҳо: {total}\\n"
-            f"⏳ Дар интизорӣ: {pending}\\n"
-            f"✅ Иҷро шуд: {done}\\n"
-            f"❌ Рад шуд: {cancelled}"
-        )
-
-    elif query.data == "admin_send":
-
-        await query.message.reply_text(
-            "📢 Матни рассылкаро навис:"
-        )
-
-        context.user_data["send_message"] = True
-    elif query.data.startswith("edit_price_"):
-        product_id = query.data.replace("edit_price_", "", 1)
-
-        if product_id not in products:
-            await query.message.reply_text("❌ Маҳсулот ёфт нашуд.")
-            return
-
-        context.user_data["edit_price_id"] = product_id
-
-        await query.message.reply_text(
-            "💰 Нархи навро бо сомонӣ навис:\n\n"
-            "Масалан: 25"
-        )
-    elif query.data == "change_prices":
-
-        await query.answer()
-
-        keyboard = []
-
-        for key, value in products.items():
-            keyboard.append(
-                [
-                    InlineKeyboardButton(
-                        value,
-                        callback_data=f"edit_price_{key}"
-                    )
-                ]
-            )
-
-        await query.message.reply_text(
-            "✏️ Кадом маҳсулотро иваз мекунӣ?",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-    elif query.data == "admin_prices":
-
-        text = "💰 Нархҳои ҳозира:\n\n"
-
-        for key, value in products.items():
-            text += f"{key}. {value}\n"
-        
-        await query.message.reply_text(text)
-app = Application.builder().token(TOKEN).build()
-
-
-app.add_handler(
-    CommandHandler(
-        "start",
-        start
+    context.user_data.clear()
+    await query.message.edit_text(
+        "❌ Фармоиш бекор карда шуд.\n\n"
+        "Барои оғози нав /start-ро пахш кунед."
     )
-)
-app.add_handler(
-    CommandHandler(
-        "admin",
-        admin
-    )
-)
-app.add_handler(
-    CallbackQueryHandler(
-        buy,
-        pattern="^buy$"
-    )
-)
 
-app.add_handler(
-    CallbackQueryHandler(
-        choose_product,
-        pattern="^product_"
-    )
-)
 
-app.add_handler(
-    CallbackQueryHandler(
-        alif,
-        pattern="^alif$"
-    )
-)
+# =========================================================
+# 🆔 ID
+# =========================================================
 
-app.add_handler(
-    CallbackQueryHandler(
-        dcnext,
-        pattern="^dcnext$"
+async def my_id(update, context):
+    await update.message.reply_text(
+        f"🆔 Telegram ID-и шумо:\n\n<code>{update.effective_user.id}</code>",
+        parse_mode="HTML",
     )
-)
-app.add_handler(
-    CallbackQueryHandler(
-        check_subscription,
-        pattern="^check_subscription$"
-    )
-)
-app.add_handler(
-    CallbackQueryHandler(
-        admin_action,
-        pattern="^(done|cancel)_"
-    )
-)
-app.add_handler(
-    CallbackQueryHandler(
-        admin_menu,
-        pattern="^(admin_|change_prices|edit_price_)"
-    )
-)
-app.add_handler(
-    MessageHandler(
-        filters.PHOTO,
-        get_photo
-    )
-)
 
-app.add_handler(
-    MessageHandler(
-        filters.TEXT & ~filters.COMMAND,
-        get_id
-    )
-)
 
+# =========================================================
+# 🔘 CALLBACK ROUTER
+# =========================================================
+
+async def callback_router(update, context):
+    data = update.callback_query.data
+
+    if data == "check_subscription":
+        await check_subscription(update, context)
+    elif data == "products":
+        await products(update, context)
+    elif data == "vouchers":
+        await vouchers(update, context)
+    elif data == "menu":
+        await show_main_menu(update, context)
+    elif data == "my_orders":
+        await my_orders(update, context)
+    elif data == "info":
+        await info(update, context)
+    elif data.startswith("buy:"):
+        await buy_product(update, context)
+    elif data.startswith("pay:"):
+        await choose_payment(update, context)
+    elif data == "receipt_help":
+        await receipt_help(update, context)
+    elif data == "cancel_order":
+        await cancel_order(update, context)
+    elif data == "admin_home":
+        await admin_home_callback(update, context)
+    elif data == "admin_orders":
+        if is_admin(update.effective_user.id):
+            await admin_orders(update, context)
+    elif data == "admin_stats":
+        if is_admin(update.effective_user.id):
+            await admin_stats(update, context)
+    elif data == "admin_users":
+        if is_admin(update.effective_user.id):
+            await admin_users(update, context)
+    elif data == "admin_prices":
+        if is_admin(update.effective_user.id):
+            await admin_prices(update, context)
+    elif data == "admin_broadcast":
+        if is_admin(update.effective_user.id):
+            await admin_broadcast_start(update, context)
+    elif data == "admin_payments":
+        if is_admin(update.effective_user.id):
+            await admin_payments(update, context)
+    elif data.startswith("edit_price:"):
+        if is_admin(update.effective_user.id):
+            await edit_price_start(update, context)
+    elif data.startswith("admin_done:") or data.startswith("admin_cancel:"):
+        await admin_order_action(update, context)
+
+
+# =========================================================
+# ❗ ERROR
+# =========================================================
 
 async def error_handler(update, context):
-    print(context.error)
-
-app.add_error_handler(error_handler)
-
-print("🔥 DANATER FREE FIRE кор карда истодааст")
-
-web = Flask(__name__)
-
-@web.route("/")
-def home():
-    return "Bot is running 24/7"
+    logger.error("Exception while handling update:", exc_info=context.error)
 
 
-def run_web():
-    web.run(
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", 8080))
+# =========================================================
+# 🚀 MAIN
+# =========================================================
+
+def main():
+    if TOKEN == "PASTE_YOUR_NEW_BOT_TOKEN_HERE":
+        raise RuntimeError(
+            "Аввал TOKEN-и боти навро дар TOKEN гузоред."
+        )
+
+    application = Application.builder().token(TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("id", my_id))
+    application.add_handler(CommandHandler("admin", admin_command))
+    application.add_handler(CommandHandler("cancel", cancel_command))
+
+    application.add_handler(CallbackQueryHandler(callback_router))
+
+    application.add_handler(
+        MessageHandler(filters.PHOTO, receive_receipt)
     )
 
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            receive_admin_text,
+        ),
+        group=0,
+    )
 
-Thread(target=run_web).start()
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            receive_ff_id,
+        ),
+        group=1,
+    )
 
-try:
-    app.run_polling(drop_pending_updates=True)
-except NetworkError:
-    print("NetworkError: Интернет қатъ шуд.")
-        
+    application.add_error_handler(error_handler)
+
+    print("🔥 DANATER FREE FIRE — PROFESSIONAL V2 запущен!")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+
+if __name__ == "__main__":
+    main()
+    
