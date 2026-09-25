@@ -8,6 +8,7 @@ import csv
 import html
 import logging
 import sqlite3
+import json
 from datetime import datetime
 from contextlib import contextmanager
 from threading import Thread
@@ -47,7 +48,7 @@ TELEGRAM_ADMIN_URL = os.getenv("TELEGRAM_ADMIN_URL", "https://t.me/ffxdavlatov")
 
 PORT      = int(os.getenv("PORT", "10000"))
 DB_PATH   = os.getenv("DB_PATH", "data.db")
-REF_BONUS_PERCENT = 4
+REF_BONUS_PERCENT = 5
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -116,6 +117,12 @@ def init_db():
         c.execute("""CREATE TABLE IF NOT EXISTS reviews (
             id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, order_id TEXT,
             rating INTEGER, text TEXT, created_at TEXT)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS account_listings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+            username TEXT, owner_name TEXT, ff_id TEXT, torsy TEXT, emotions TEXT,
+            binding TEXT, evolutions TEXT, price REAL NOT NULL, guarantor TEXT,
+            photos TEXT NOT NULL, status TEXT DEFAULT 'pending',
+            created_at TEXT, updated_at TEXT)""")
         conn.commit()
 
 def seed_products():
@@ -329,6 +336,54 @@ def delete_promo(code):
         conn.execute("DELETE FROM promos WHERE code=?", (code.upper(),))
         conn.commit()
 
+# ---------- ACCOUNT MARKETPLACE ----------
+def create_account_listing(data):
+    now = datetime.now().isoformat()
+    with db() as conn:
+        cur = conn.execute("""INSERT INTO account_listings
+            (user_id,username,owner_name,ff_id,torsy,emotions,binding,evolutions,price,guarantor,photos,status,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,'pending',?,?)""",
+            (data["user_id"], data.get("username", ""), data.get("owner_name", ""),
+             data.get("ff_id", ""), data.get("torsy", ""), data.get("emotions", ""),
+             data.get("binding", ""), data.get("evolutions", ""), float(data["price"]),
+             data.get("guarantor", ADMIN_USERNAME), json.dumps(data.get("photos", [])), now, now))
+        conn.commit()
+        return cur.lastrowid
+
+def get_account_listing(aid):
+    with db() as conn:
+        row = conn.execute("SELECT * FROM account_listings WHERE id=?", (aid,)).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    try:
+        d["photos"] = json.loads(d.get("photos") or "[]")
+    except (TypeError, json.JSONDecodeError):
+        d["photos"] = []
+    return d
+
+def account_listings(status=None, limit=50):
+    with db() as conn:
+        if status:
+            rows = conn.execute("SELECT * FROM account_listings WHERE status=? ORDER BY created_at DESC LIMIT ?", (status, limit)).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM account_listings ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+    out=[]
+    for row in rows:
+        d=dict(row)
+        try: d["photos"]=json.loads(d.get("photos") or "[]")
+        except (TypeError, json.JSONDecodeError): d["photos"]=[]
+        out.append(d)
+    return out
+
+def update_account_status(aid, status):
+    with db() as conn:
+        conn.execute("UPDATE account_listings SET status=?, updated_at=? WHERE id=?", (status, datetime.now().isoformat(), aid))
+        conn.commit()
+
+def account_status_label(status):
+    return {"pending":"⏳ Дар интизорӣ", "approved":"✅ Тасдиқшуда", "sold":"💰 Фурӯхта шуд", "cancelled":"❌ Бекор шуд"}.get(status, status)
+
 # ---------- REVIEWS ----------
 def add_review(uid, oid, rating, text):
     with db() as conn:
@@ -370,6 +425,9 @@ def main_menu():
         [InlineKeyboardButton("👤 Профил", callback_data="profile")],
         [InlineKeyboardButton("📦 Фармоишҳои ман", callback_data="my_orders")],
         [InlineKeyboardButton("🎁 Реферал / Баланс", callback_data="ref")],
+        [InlineKeyboardButton("🎟 Активировать промокод", callback_data="promo_user")],
+        [InlineKeyboardButton("🛍 Хариди аккаунт", callback_data="accounts:buy")],
+        [InlineKeyboardButton("💰 Фурӯши аккаунт", callback_data="accounts:sell")],
         [InlineKeyboardButton("ℹ️ Маълумот", callback_data="info")],
     ])
 
@@ -398,6 +456,27 @@ def category_menu(cat):
     rows.append([InlineKeyboardButton("⬅️ Бозгашт", callback_data="shop")])
     return InlineKeyboardMarkup(rows)
 
+def account_cancel_kb():
+    return InlineKeyboardMarkup([[InlineKeyboardButton("❌ Бекор", callback_data="cancel_account")]])
+
+def account_photos_done_kb():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Суратҳо тайёр", callback_data="account:photos_done")],
+        [InlineKeyboardButton("❌ Бекор", callback_data="cancel_account")]
+    ])
+
+def account_admin_keyboard(aid):
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Тасдиқ", callback_data=f"account_approve:{aid}"),
+        InlineKeyboardButton("❌ Бекор", callback_data=f"account_cancel:{aid}")
+    ]])
+
+def account_buy_keyboard(aid):
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📩 Харидани аккаунт", callback_data=f"account_buy:{aid}")],
+        [InlineKeyboardButton("⬅️ Аккаунтҳо", callback_data="accounts:buy")]
+    ])
+
 def payment_keyboard(balance):
     rows = []
     if balance and balance > 0:
@@ -421,6 +500,7 @@ def order_action_keyboard(oid):
 def admin_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📦 Фармоишҳо", callback_data="admin:orders")],
+        [InlineKeyboardButton("💰 Аккаунтҳои фурӯш", callback_data="admin:accounts")],
         [InlineKeyboardButton("👥 Корбарон", callback_data="admin:users")],
         [InlineKeyboardButton("💰 Нархҳо", callback_data="admin:prices")],
         [InlineKeyboardButton("➕ Илова маҳсулот", callback_data="admin:add_product")],
@@ -558,6 +638,104 @@ async def promo_command(update, context):
 # ============================================================
 # USER CALLBACKS
 # ============================================================
+
+async def cb_promo_user(update, context):
+    q=update.callback_query; await q.answer()
+    if not await require_sub(update, context): return
+    context.user_data["state"]="promo_user"
+    await q.message.edit_text("🎟 <b>АКТИВИРОВАТЬ ПРОМОКОД</b>\n\nКоди промокодро фиристед:\nМисол: <code>SALE10</code>", reply_markup=cancel_kb(), parse_mode=ParseMode.HTML)
+
+async def cb_accounts_buy(update, context):
+    q=update.callback_query; await q.answer()
+    if not await require_sub(update, context): return
+    items=account_listings("approved", 30)
+    if not items:
+        await q.message.edit_text("🛍 <b>ХАРИДИ АККАУНТ</b>\n\nҲоло аккаунти тасдиқшуда барои фурӯш нест.", reply_markup=main_menu(), parse_mode=ParseMode.HTML)
+        return
+    rows=[]
+    for a in items:
+        rows.append([InlineKeyboardButton(f"🎮 Аккаунт #{a['id']} — {money(a['price'])} с.", callback_data=f"account_view:{a['id']}")])
+    rows.append([InlineKeyboardButton("⬅️ Меню", callback_data="menu")])
+    await q.message.edit_text("🛍 <b>АККАУНТҲО БАРОИ ФУРӮШ</b>\n\nАккаунтро интихоб кунед:", reply_markup=InlineKeyboardMarkup(rows), parse_mode=ParseMode.HTML)
+
+async def cb_account_view(update, context):
+    q=update.callback_query; await q.answer()
+    a=get_account_listing(int(q.data.split(":",1)[1]))
+    if not a or a["status"]!="approved":
+        await q.answer("Ин аккаунт дастрас нест.", show_alert=True); return
+    text=(f"🎮 <b>АККАУНТ #{a['id']}</b>\n\n"
+          f"👕 Торсы: <b>{e(a['torsy'])}</b>\n😎 Эмоцияҳо: <b>{e(a['emotions'])}</b>\n"
+          f"🔗 Привязка: <b>{e(a['binding'])}</b>\n⚡ Эволюция: <b>{e(a['evolutions'])}</b>\n"
+          f"💰 Нарх: <b>{money(a['price'])} сомонӣ</b>\n👤 Владелец: <b>{e(a['owner_name'])}</b>\n"
+          f"🛡 Гарант: <b>{e(a['guarantor'])}</b>\n\n📸 Суратҳо: {len(a['photos'])}")
+    if a["photos"]:
+        try:
+            await q.message.delete()
+        except TelegramError: pass
+        for i,pid in enumerate(a["photos"]):
+            try:
+                await context.bot.send_photo(chat_id=q.from_user.id, photo=pid, caption=text if i==0 else None, reply_markup=account_buy_keyboard(a["id"]) if i==len(a["photos"])-1 else None, parse_mode=ParseMode.HTML if i==0 else None)
+            except TelegramError: pass
+    else:
+        await q.message.edit_text(text, reply_markup=account_buy_keyboard(a["id"]), parse_mode=ParseMode.HTML)
+
+async def cb_account_buy(update, context):
+    q=update.callback_query; await q.answer()
+    a=get_account_listing(int(q.data.split(":",1)[1]))
+    if not a or a["status"]!="approved":
+        await q.answer("Ин аккаунт аллакай дастрас нест.", show_alert=True); return
+    u=update.effective_user
+    uname=f"@{u.username}" if u.username else "—"
+    msg=(f"🛍 <b>Дархости хариди аккаунт #{a['id']}</b>\n\n"
+         f"💰 Нарх: <b>{money(a['price'])} сомонӣ</b>\n"
+         f"👤 Харидор: {e(uname)}\n🆔 ID: <code>{u.id}</code>")
+    for admin_id in ADMIN_IDS:
+        try: await context.bot.send_message(admin_id, msg, parse_mode=ParseMode.HTML)
+        except TelegramError: pass
+    await q.message.reply_text("✅ Дархости шумо ба админ фиристода шуд. Барои харид админ бо шумо тамос мегирад.", reply_markup=main_menu(), parse_mode=ParseMode.HTML)
+
+async def cb_account_cancel_user(update, context):
+    q=update.callback_query; await q.answer("Бекор шуд.")
+    context.user_data.clear()
+    await q.message.edit_text("❌ <b>Фурӯши аккаунт бекор шуд.</b>", reply_markup=main_menu(), parse_mode=ParseMode.HTML)
+
+async def cb_accounts_sell(update, context):
+    q=update.callback_query; await q.answer()
+    if not await require_sub(update, context): return
+    context.user_data.clear(); context.user_data["state"]="account_photos"; context.user_data["account_photos"]=[]
+    await q.message.edit_text("💰 <b>ФУРӮШИ АККАУНТ</b>\n\n📸 Суратҳои аккаунтатонро фиристед. Метавонед якчанд сурат фиристед.\n\nБаъд аз ҳамаи суратҳо тугмаи <b>«Суратҳо тайёр»</b>-ро пахш кунед.", reply_markup=account_photos_done_kb(), parse_mode=ParseMode.HTML)
+
+async def cb_account_photos_done(update, context):
+    q=update.callback_query; await q.answer()
+    photos=context.user_data.get("account_photos",[])
+    if not photos:
+        await q.answer("Аввал ҳадди ақал 1 сурат фиристед.", show_alert=True); return
+    context.user_data["state"]="account_ffid"
+    await q.message.edit_text("🎮 <b>Free Fire ID-и аккаунтро фиристед:</b>", reply_markup=account_cancel_kb(), parse_mode=ParseMode.HTML)
+
+async def cb_account_submit(update, context):
+    q=update.callback_query; await q.answer()
+    if not await require_sub(update, context): return
+    d=context.user_data
+    photos=d.get("account_photos",[])
+    required=["account_ff_id","account_torsy","account_emotions","account_binding","account_evolutions","account_price","account_owner"]
+    if not photos or any(k not in d for k in required):
+        await q.answer("Маълумот пурра нест.", show_alert=True); return
+    u=update.effective_user; uname=f"@{u.username}" if u.username else "—"
+    aid=create_account_listing({"user_id":u.id,"username":uname,"owner_name":d["account_owner"],"ff_id":d["account_ff_id"],"torsy":d["account_torsy"],"emotions":d["account_emotions"],"binding":d["account_binding"],"evolutions":d["account_evolutions"],"price":d["account_price"],"guarantor":"@"+ADMIN_USERNAME,"photos":photos})
+    caption=(f"🆕 <b>ДАРХОСТИ НАВИ ФУРӮШИ АККАУНТ #{aid}</b>\n\n"
+             f"👤 Фурӯшанда: {e(uname)}\n🆔 Telegram ID: <code>{u.id}</code>\n"
+             f"🎮 FF ID: <code>{e(d['account_ff_id'])}</code>\n👕 Торсы: <b>{e(d['account_torsy'])}</b>\n"
+             f"😎 Эмоцияҳо: <b>{e(d['account_emotions'])}</b>\n🔗 Привязка: <b>{e(d['account_binding'])}</b>\n"
+             f"⚡ Эволюция: <b>{e(d['account_evolutions'])}</b>\n💰 Нарх: <b>{money(d['account_price'])} сомонӣ</b>\n"
+             f"👤 Владелец: <b>{e(d['account_owner'])}</b>\n🛡 Гарант: <b>@{e(ADMIN_USERNAME)}</b>\n📸 Суратҳо: {len(photos)}")
+    for admin_id in ADMIN_IDS:
+        for i,pid in enumerate(photos):
+            try:
+                await context.bot.send_photo(chat_id=admin_id, photo=pid, caption=caption if i==0 else None, reply_markup=account_admin_keyboard(aid) if i==0 else None, parse_mode=ParseMode.HTML if i==0 else None)
+            except TelegramError as ex: logger.error("Account photo notify failed: %s", ex)
+    context.user_data.clear()
+    await q.message.edit_text("✅ <b>Ариза қабул шуд!</b>\n\n⏳ Суратҳо ва маълумоти аккаунт ба админ фиристода шуд. Пас аз тасдиқ аккаунт дар бахши «Хариди аккаунт» пайдо мешавад.", reply_markup=main_menu(), parse_mode=ParseMode.HTML)
 
 async def cb_menu(update, context):
     q = update.callback_query
@@ -1002,6 +1180,55 @@ async def handle_text(update, context):
             reply_markup=admin_menu(), parse_mode=ParseMode.HTML)
         return
 
+    # USER: promo activation
+    if state == "promo_user":
+        code=update.message.text.strip().upper()
+        p=get_promo(code)
+        if not p:
+            await update.message.reply_text("❌ Промокод ёфт нашуд ё фаъол нест.")
+            return
+        if p["max_uses"] and p["used"] >= p["max_uses"]:
+            await update.message.reply_text("❌ Промокод тамом шуд.")
+            return
+        context.user_data["promo"]={"code":p["code"],"discount_percent":p["discount_percent"]}
+        context.user_data.pop("state",None)
+        await update.message.reply_text(f"✅ Промокод <b>{e(p['code'])}</b> фаъол шуд (-{p['discount_percent']}%).", reply_markup=main_menu(), parse_mode=ParseMode.HTML)
+        return
+
+    # USER: account sale flow
+    if state == "account_ffid":
+        v=update.message.text.strip()
+        if not v.isdigit() or not (5<=len(v)<=20):
+            await update.message.reply_text("❌ Free Fire ID нодуруст."); return
+        context.user_data["account_ff_id"]=v; context.user_data["state"]="account_torsy"
+        await update.message.reply_text("👕 <b>Торсы чандто?</b>", reply_markup=account_cancel_kb(), parse_mode=ParseMode.HTML); return
+    if state == "account_torsy":
+        context.user_data["account_torsy"]=update.message.text.strip(); context.user_data["state"]="account_emotions"
+        await update.message.reply_text("😎 <b>Эмоцияҳо чандто?</b>", reply_markup=account_cancel_kb(), parse_mode=ParseMode.HTML); return
+    if state == "account_emotions":
+        context.user_data["account_emotions"]=update.message.text.strip(); context.user_data["state"]="account_binding"
+        await update.message.reply_text("🔗 <b>Привязкаи аккаунт чист?</b>\nМисол: Facebook / Google / VK / Guest", reply_markup=account_cancel_kb(), parse_mode=ParseMode.HTML); return
+    if state == "account_binding":
+        context.user_data["account_binding"]=update.message.text.strip(); context.user_data["state"]="account_evolutions"
+        await update.message.reply_text("⚡ <b>Эволюцияҳо чандто?</b>", reply_markup=account_cancel_kb(), parse_mode=ParseMode.HTML); return
+    if state == "account_evolutions":
+        context.user_data["account_evolutions"]=update.message.text.strip(); context.user_data["state"]="account_price"
+        await update.message.reply_text("💰 <b>Нархи аккаунтро бо сомонӣ нависед:</b>", reply_markup=account_cancel_kb(), parse_mode=ParseMode.HTML); return
+    if state == "account_price":
+        raw=update.message.text.strip().replace(",", ".")
+        try: price=float(raw)
+        except ValueError:
+            await update.message.reply_text("❌ Нарх нодуруст. Масалан: 500"); return
+        if price<=0 or price>1000000:
+            await update.message.reply_text("❌ Нарх нодуруст."); return
+        context.user_data["account_price"]=price; context.user_data["state"]="account_owner"
+        await update.message.reply_text("👤 <b>Номи владелецро нависед:</b>", reply_markup=account_cancel_kb(), parse_mode=ParseMode.HTML); return
+    if state == "account_owner":
+        owner=update.message.text.strip()
+        if not owner: await update.message.reply_text("❌ Ном холӣ буда наметавонад."); return
+        context.user_data["account_owner"]=owner; context.user_data["state"]="account_submit"
+        await update.message.reply_text("🛡 <b>Гарант:</b> @ffxdavlatov\n\nМаълумот тайёр аст. Барои фиристодан ба админ тугмаи поёнро пахш кунед.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📤 Фиристодан ба админ", callback_data="account:submit")],[InlineKeyboardButton("❌ Бекор", callback_data="cancel_account")]]), parse_mode=ParseMode.HTML); return
+
     # USER: search
     if state == "search":
         query = update.message.text.strip()
@@ -1069,6 +1296,16 @@ async def handle_photo(update, context):
     save_user(user)
 
     if not await require_sub(update, context):
+        return
+
+    # USER: account sale photos
+    if context.user_data.get("state") == "account_photos":
+        pid=update.message.photo[-1].file_id
+        photos=context.user_data.setdefault("account_photos",[])
+        if len(photos)>=10:
+            await update.message.reply_text("❌ Максимум 10 сурат.", reply_markup=account_photos_done_kb()); return
+        photos.append(pid)
+        await update.message.reply_text(f"📸 Сурат қабул шуд: <b>{len(photos)}/10</b>", reply_markup=account_photos_done_kb(), parse_mode=ParseMode.HTML)
         return
 
     if context.user_data.get("state") != "waiting_receipt":
@@ -1266,6 +1503,28 @@ async def admin_callback(update, context):
             reply_markup=InlineKeyboardMarkup(rows), parse_mode=ParseMode.HTML)
         return
 
+    if data == "admin:accounts":
+        await q.answer()
+        items=account_listings("pending",50)
+        if not items:
+            await q.message.edit_text("💰 <b>АККАУНТҲО</b>\n\nАризаи нав нест.", reply_markup=admin_back(), parse_mode=ParseMode.HTML); return
+        rows=[]
+        for a in items:
+            rows.append([InlineKeyboardButton(f"⏳ #{a['id']} — {money(a['price'])} с.", callback_data=f"admin_account_view:{a['id']}")])
+        rows.append([InlineKeyboardButton("⬅️ Admin", callback_data="admin:menu")])
+        await q.message.edit_text("💰 <b>АРИЗАҲОИ ФУРӮШИ АККАУНТ</b>", reply_markup=InlineKeyboardMarkup(rows), parse_mode=ParseMode.HTML); return
+
+    if data.startswith("admin_account_view:"):
+        await q.answer(); a=get_account_listing(int(data.split(":",1)[1]))
+        if not a: await q.message.edit_text("❌ Ёфт нашуд.", reply_markup=admin_back()); return
+        caption=(f"💰 <b>АККАУНТ #{a['id']}</b>\n\n👤 {e(a['username'])}\n🆔 <code>{a['user_id']}</code>\n🎮 FF ID: <code>{e(a['ff_id'])}</code>\n"
+                 f"👕 Торсы: {e(a['torsy'])}\n😎 Эмоцияҳо: {e(a['emotions'])}\n🔗 Привязка: {e(a['binding'])}\n⚡ Эволюция: {e(a['evolutions'])}\n"
+                 f"💰 Нарх: {money(a['price'])} с.\n👤 Владелец: {e(a['owner_name'])}\n🛡 Гарант: {e(a['guarantor'])}")
+        for i,pid in enumerate(a['photos']):
+            try: await context.bot.send_photo(chat_id=q.from_user.id, photo=pid, caption=caption if i==0 else None, reply_markup=account_admin_keyboard(a['id']) if i==0 else None, parse_mode=ParseMode.HTML if i==0 else None)
+            except TelegramError: pass
+        return
+
     if data == "admin:users":
         await q.answer()
         users = all_users_detailed(50)
@@ -1402,6 +1661,25 @@ async def admin_callback(update, context):
             reply_markup=InlineKeyboardMarkup(rows), parse_mode=ParseMode.HTML)
         return
 
+    if data.startswith("account_approve:") or data.startswith("account_cancel:"):
+        await q.answer()
+        action, aid_s=data.split(":",1); aid=int(aid_s); a=get_account_listing(aid)
+        if not a: await q.answer("Аккаунт ёфт нашуд.", show_alert=True); return
+        if action=="account_approve":
+            update_account_status(aid,"approved")
+            status_text="✅ <b>Аккаунт тасдиқ шуд!</b>"
+            user_text=f"✅ <b>Аккаунти шумо #{aid} тасдиқ шуд!</b>\n\nҲоло он дар бахши 🛍 <b>Хариди аккаунт</b> намоиш дода мешавад."
+        else:
+            update_account_status(aid,"cancelled")
+            status_text="❌ <b>Ариза бекор шуд.</b>"
+            user_text=f"❌ <b>Аризаи фурӯши аккаунти #{aid} бекор карда шуд.</b>"
+        try: await context.bot.send_message(chat_id=int(a["user_id"]), text=user_text, reply_markup=main_menu(), parse_mode=ParseMode.HTML)
+        except TelegramError: pass
+        try: await q.message.edit_reply_markup(reply_markup=None)
+        except TelegramError: pass
+        await q.message.reply_text(status_text, parse_mode=ParseMode.HTML)
+        return
+
     if data.startswith("order_done:") or data.startswith("order_cancel:"):
         await q.answer()
         action, oid = data.split(":", 1)
@@ -1473,6 +1751,22 @@ async def callback_router(update, context):
         await cb_ref(update, context)
     elif data == "ref_share":
         await cb_ref_share(update, context)
+    elif data == "promo_user":
+        await cb_promo_user(update, context)
+    elif data == "accounts:buy":
+        await cb_accounts_buy(update, context)
+    elif data == "accounts:sell":
+        await cb_accounts_sell(update, context)
+    elif data == "account:photos_done":
+        await cb_account_photos_done(update, context)
+    elif data == "account:submit":
+        await cb_account_submit(update, context)
+    elif data == "cancel_account":
+        await cb_account_cancel_user(update, context)
+    elif data.startswith("account_view:"):
+        await cb_account_view(update, context)
+    elif data.startswith("account_buy:"):
+        await cb_account_buy(update, context)
     elif data == "info":
         await cb_info(update, context)
     elif data == "search":
@@ -1487,7 +1781,8 @@ async def callback_router(update, context):
             parse_mode=ParseMode.HTML)
     elif (data.startswith("admin:") or data.startswith("price:")
           or data.startswith("promo:") or data.startswith("order_")
-          or data.startswith("delprod:")):
+          or data.startswith("delprod:") or data.startswith("account_approve:")
+          or data.startswith("account_cancel:") or data.startswith("admin_account_view:")):
         await admin_callback(update, context)
     else:
         await q.answer("Ин амал дастгирӣ намешавад.", show_alert=True)
