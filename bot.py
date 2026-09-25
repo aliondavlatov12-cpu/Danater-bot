@@ -1036,7 +1036,129 @@ async def handle_text(update, context):
         await update.message.reply_text(
             "👤 <b>Номи худро фиристед:</b>\nМисол: Ysuf",
             parse_mode=ParseMode.HTML)
-        retu
+        return
+
+    # USER: name
+    if state == "waiting_name":
+        name = update.message.text.strip()
+        if not (2 <= len(name) <= 100):
+            await update.message.reply_text("❌ Ном нодуруст.")
+            return
+        context.user_data["customer_name"] = name
+        context.user_data["state"] = "waiting_payment"
+        u = get_user(user.id)
+        bal = u["balance"] if u else 0
+        await update.message.reply_text(
+            "💳 <b>Усули пардохтро интихоб кунед:</b>\n\n"
+            "3 усул:\n"
+            "1️⃣ 💰 Аз баланс\n"
+            "2️⃣ 💳 Alif\n"
+            "3️⃣ 💳 Dushanbe City",
+            reply_markup=payment_keyboard(bal), parse_mode=ParseMode.HTML)
+        return
+
+
+# ============================================================
+# PHOTO HANDLER (receipt)
+# ============================================================
+
+async def handle_photo(update, context):
+    user = update.effective_user
+    if not user:
+        return
+    save_user(user)
+
+    if not await require_sub(update, context):
+        return
+
+    if context.user_data.get("state") != "waiting_receipt":
+        await update.message.reply_text(
+            "ℹ️ Аввал маҳсулотро интихоб кунед.", reply_markup=main_menu())
+        return
+
+    pid = context.user_data.get("product_id")
+    ffid = context.user_data.get("ffid")
+    cname = context.user_data.get("customer_name")
+    pm = context.user_data.get("payment_method")
+    final = context.user_data.get("final_price")
+    discount = context.user_data.get("discount", 0)
+    promo = context.user_data.get("promo")
+
+    p = get_product(pid) if pid else None
+    if not p or not ffid or not cname or not pm:
+        context.user_data.clear()
+        await update.message.reply_text(
+            "❌ Сессия гузашт.", reply_markup=main_menu())
+        return
+
+    u = get_user(user.id)
+    referred_by = u["referrer_id"] if u else None
+
+    order_id = f"{datetime.now().strftime('%Y%m%d%H%M%S')}-{user.id}"
+    order = {
+        "id": order_id, "user_id": user.id,
+        "customer_name": cname, "free_fire_id": ffid,
+        "product_id": pid, "product_name": p["name"],
+        "price": float(p["price"]), "payment_method": pm,
+        "promo_code": promo["code"] if promo else None,
+        "discount": discount, "final_price": final,
+        "referred_by": referred_by,
+        "created_at": datetime.now().isoformat(),
+    }
+    create_order(order)
+
+    if promo:
+        use_promo(promo["code"])
+
+    if referred_by:
+        bonus = give_referral_bonus(referred_by, final, REF_BONUS_PERCENT)
+        if bonus > 0:
+            try:
+                await context.bot.send_message(
+                    chat_id=referred_by,
+                    text=(f"💰 <b>+{money(bonus)} сомонӣ</b> ба баланси шумо!\n\n"
+                          f"Аз фармоиши реферали шумо (<code>{user.id}</code>).\n"
+                          f"Маблағи фармоиш: {money(final)} сомонӣ"),
+                    parse_mode=ParseMode.HTML)
+            except TelegramError:
+                pass
+
+    username = f"@{user.username}" if user.username else "username надорад"
+    ref_line = f"\n🎁 Реферал аз: <code>{referred_by}</code>" if referred_by else ""
+    promo_line = f"\n🎟 Промокод: <b>{e(promo['code'])}</b> (-{money(discount)} с.)" if promo else ""
+
+    admin_text = (
+        "🆕 <b>ФАРМОИШИ НАВ</b>\n\n"
+        f"🧾 ID: <code>{order_id}</code>\n"
+        f"📦 {e(p['name'])}\n"
+        f"💰 Маблағ: <b>{money(final)} сомонӣ</b>\n"
+        f"🎮 FF ID: <code>{e(ffid)}</code>\n"
+        f"👤 Ном: <b>{e(cname)}</b>\n"
+        f"📱 {e(username)}\n"
+        f"🆔 TG ID: <code>{user.id}</code>\n"
+        f"💳 {e(pm)}{promo_line}{ref_line}"
+    )
+    kb = order_action_keyboard(order_id)
+    for admin_id in ADMIN_IDS:
+        try:
+            await context.bot.send_photo(
+                chat_id=admin_id,
+                photo=update.message.photo[-1].file_id,
+                caption=admin_text, reply_markup=kb,
+                parse_mode=ParseMode.HTML)
+        except TelegramError as ex:
+            logger.error("Admin photo notify failed: %s", ex)
+
+    context.user_data.clear()
+    await update.message.reply_text(
+        "✅ <b>Фармоиши шумо қабул шуд!</b>\n\n"
+        f"📦 {e(p['name'])}\n"
+        f"💰 {money(final)} сомонӣ\n"
+        f"🧾 ID: <code>{order_id}</code>\n\n"
+        "⏳ Администратор расидро месанҷад.",
+        reply_markup=main_menu(), parse_mode=ParseMode.HTML)
+
+
 
 # ============================================================
 # DANATER FREE FIRE BOT — PART 3/3
