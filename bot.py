@@ -6,6 +6,7 @@ import os
 import io
 import csv
 import html
+import hashlib
 import logging
 import sqlite3
 import json
