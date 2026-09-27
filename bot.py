@@ -1923,7 +1923,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("id", my_id))
-        app.add_handler(CommandHandler("promo", promo_command))
+    app.add_handler(CommandHandler("promo", promo_command))
     app.add_handler(CommandHandler("admin", admin_command))
     app.add_handler(CallbackQueryHandler(callback_router))
 
