@@ -463,6 +463,131 @@ def lang_keyboard():
     return InlineKeyboardMarkup([[InlineKeyboardButton("🇷🇺 Русский",callback_data="lang:ru"),InlineKeyboardButton("🇹🇯 Тоҷикӣ",callback_data="lang:tg")],[InlineKeyboardButton("⬅️ Меню",callback_data="menu")]])
 
 # ============================================================
+# FREE FIRE SETTINGS
+# ============================================================
+
+PHONE_CATALOG = {
+    "android": {
+        "Samsung": "Galaxy A05,A05s,A06,A14,A15,A16,A24,A25,A26,A34,A35,A36,A54,A55,A56,S20,S20 FE,S21,S21 FE,S22,S22 Plus,S22 Ultra,S23,S23 FE,S23 Plus,S23 Ultra,S24,S24 FE,S24 Plus,S24 Ultra,S25,S25 Edge,S25 Plus,S25 Ultra,S26,S26 Plus,S26 Ultra,M12,M13,M14,M15,M16,M23,M33,M34,M35,M52,M53,M54,M55,F13,F14,F15,F23,F34,F54,Z Flip3,Z Flip4,Z Flip5,Z Flip6,Z Fold3,Z Fold4,Z Fold5,Z Fold6",
+        "Xiaomi": "Mi 10,Mi 10T,Mi 11,Mi 11T,Mi 11T Pro,Mi 12,Mi 12 Pro,Mi 13,Mi 13 Pro,Mi 14,Mi 14 Ultra,Mi 15,Mi 15 Ultra,Xiaomi 12T,Xiaomi 13T,Xiaomi 14T,Xiaomi 15T",
+        "Redmi": "Redmi 9,9A,9C,10,10C,10 2022,12,12C,13C,13,13 5G,14C,14C 5G,Note 9,Note 10,Note 10 Pro,Note 11,Note 11 Pro,Note 12,Note 12 Pro,Note 13,Note 13 Pro,Note 13 Pro Plus,Note 14,Note 14 Pro,Note 14 Pro Plus",
+        "POCO": "C40,C50,C51,C55,C61,C65,M3,M4 Pro,M5,M5s,M6,M6 Pro,M7,M7 Pro,X3 NFC,X3 Pro,X4 Pro,X5,X5 Pro,X6,X6 Pro,X7,X7 Pro,F3,F4,F5,F5 Pro,F6,F6 Pro,F7,F7 Pro",
+        "TECNO": "Spark 7,Spark 8,Spark 9,Spark 10,Spark 10 Pro,Spark 20,Spark 20 Pro,Spark 20C,Spark 30,Spark 30 Pro,Spark 40,Spark Go 2022,Spark Go 2023,Spark Go 2024,Spark Go 1,Camon 18,Camon 19,Camon 20,Camon 20 Pro,Camon 30,Camon 30 Pro,Camon 40,Camon 40 Pro,Pova 4,Pova 5,Pova 5 Pro,Pova 6,Pova 6 Pro,Pova 7,Pova 7 Pro",
+        "Infinix": "Hot 10,Hot 11,Hot 12,Hot 20,Hot 30,Hot 40,Hot 50,Hot 50 Pro,Hot 60,Note 10,Note 11,Note 12,Note 30,Note 40,Note 50,GT 10 Pro,GT 20 Pro,GT 30 Pro,Zero 20,Zero 30,Zero 40",
+        "HONOR": "X5,X5 Plus,X6,X6a,X7,X7a,X7b,X8,X8a,X8b,X9a,X9b,90 Lite,90,90 Pro,200 Lite,200,200 Pro,Magic5 Lite,Magic5 Pro,Magic6 Lite,Magic6 Pro,Magic7 Lite,Magic7 Pro,Magic V2,Magic V3",
+        "Huawei": "P30,P30 Pro,P40,P40 Pro,P50,P50 Pro,P60,P60 Pro,Pura 70,Pura 70 Pro,Mate 20,Mate 30,Mate 40,Mate 50,Mate 60,Mate 70,Nova 7,Nova 8,Nova 9,Nova 10,Nova 11,Nova 12,Nova 13",
+        "OPPO": "A15,A16,A17,A18,A38,A39,A40,A54,A57,A58,A59,A60,A74,A76,A77,A78,A79,A80,Reno 5,Reno 6,Reno 7,Reno 8,Reno 9,Reno 10,Reno 11,Reno 12,Reno 13,Find X3,Find X5,Find X6,Find X7,Find X8",
+        "vivo": "Y12,Y15,Y16,Y17,Y20,Y21,Y22,Y27,Y28,Y33,Y35,Y36,Y37,Y38,Y39,Y50,Y55,Y56,Y58,V20,V21,V23,V25,V27,V29,V30,V40,V50,X60,X70,X80,X90,X100,X200",
+        "realme": "C11,C12,C15,C21,C25,C30,C31,C33,C35,C51,C53,C55,C61,C63,C65,C67,C71,C75,C75x,9i,9 Pro,10,10 Pro,11,11 Pro,12,12 Pro,13,13 Pro,GT Neo 2,GT Neo 3,GT Neo 5,GT 5,GT 6,GT 7",
+        "OnePlus": "Nord,Nord N10,Nord N20,Nord N30,Nord CE 2,Nord CE 3,Nord CE 4,Nord CE 5,8,8T,9,9 Pro,10 Pro,11,11R,12,12R,13,13R,13 Pro",
+        "Motorola": "Moto E7,Moto E13,Moto E14,Moto E22,Moto E32,Moto E40,Moto G20,Moto G22,Moto G31,Moto G32,Moto G42,Moto G52,Moto G53,Moto G54,Moto G55,Moto G62,Moto G72,Moto G73,Moto G84,Moto G85,Edge 20,Edge 30,Edge 40,Edge 50,Edge 60",
+        "Google Pixel": "Pixel 4,Pixel 4a,Pixel 5,Pixel 5a,Pixel 6,Pixel 6a,Pixel 6 Pro,Pixel 7,Pixel 7a,Pixel 7 Pro,Pixel 8,Pixel 8a,Pixel 8 Pro,Pixel 9,Pixel 9a,Pixel 9 Pro,Pixel 9 Pro XL,Pixel 10,Pixel 10 Pro",
+        "ASUS": "ROG Phone 3,ROG Phone 5,ROG Phone 6,ROG Phone 7,ROG Phone 8,ROG Phone 9,Zenfone 8,Zenfone 9,Zenfone 10,Zenfone 11,Zenfone 12",
+        "Sony": "Xperia 1 II,Xperia 1 III,Xperia 1 IV,Xperia 1 V,Xperia 1 VI,Xperia 1 VII,Xperia 5 II,Xperia 5 III,Xperia 5 IV,Xperia 5 V,Xperia 10 III,Xperia 10 IV,Xperia 10 V,Xperia 10 VI",
+        "Nothing": "Phone 1,Phone 2,Phone 2a,Phone 3,CMF Phone 1",
+        "Nubia": "RedMagic 6,RedMagic 7,RedMagic 8,RedMagic 9,RedMagic 10,RedMagic 11,Z40,Z50,Z60",
+        "Lenovo": "Legion Phone Duel,Legion Phone Duel 2,Legion Y70,Legion Y90",
+        "ZTE": "Axon 30,Axon 40,Axon 50,Axon 60,Blade A31,Blade A51,Blade A71,Blade V40,Blade V50",
+        "TCL": "10L,20L,20 Pro,30,30 Plus,40,40 XL,50,50 5G",
+        "Nokia": "Nokia 2.4,Nokia 3.4,Nokia 5.3,Nokia 5.4,Nokia 6.2,Nokia 7.2,Nokia 8.3,Nokia C10,Nokia C20,Nokia C21,Nokia C22,Nokia C32,Nokia G10,Nokia G11,Nokia G21,Nokia G22,Nokia G42,Nokia G50",
+        "Meizu": "17,18,20,21,Note 9,Note 10",
+        "Sharp": "Aquos R5G,Aquos R6,Aquos R7,Aquos R8,Aquos R9,Zero 5G",
+        "Fairphone": "Fairphone 3,Fairphone 4,Fairphone 5,Fairphone 6",
+        "itel": "A48,A49,A60,A70,P17,P18,P36,P40,P55",
+        "Black Shark": "Black Shark 2,Black Shark 3,Black Shark 4,Black Shark 5,Black Shark 6,Black Shark 7",
+        "HTC": "U11,U12+,U20,Desire 20,Desire 21,Desire 22,Desire 23",
+        "LG": "V30,V40,V50,V60,G7,G8,G8X,K40,K50,K51,K52",
+        "Microsoft": "Surface Duo,Surface Duo 2",
+        "Doogee": "S35,S40,S59,S61,S89,S100,V20,V30,V30T",
+        "Ulefone": "Armor 9,Armor 10,Armor 12,Armor 17,Armor 21,Armor 22,Note 12,Note 16",
+        "Oukitel": "C21,C22,C25,C31,C35,WP19,WP21,WP22,WP30",
+        "Blackview": "A60,A80,A90,A95,BL5000,BL8800,BV5200,BV6200,BV9300",
+        "UMIDIGI": "A9,A11,A13,A15,Bison,Bison GT,Bison X10,G5,G6",
+        "Alcatel": "1,1B,1S,3,3X,5,7",
+        "Coolpad": "Cool 10,Cool 12A,Cool 20,Cool 30,Cool S",
+        "Lava": "Z2,Z3,Z4,Z6,Agni 2,Blaze 2,Blaze 3",
+        "Micromax": "IN 1,IN 2b,IN 2c,IN Note 1,IN Note 2",
+        "iQOO": "Z3,Z5,Z6,Z7,Z9,Z10,Neo 6,Neo 7,Neo 8,Neo 9,Neo 10,11,12,13",
+    },
+    "ios": {
+        "iPhone": "iPhone 6s,iPhone 6s Plus,iPhone 7,iPhone 7 Plus,iPhone 8,iPhone 8 Plus,iPhone X,iPhone XR,iPhone XS,iPhone XS Max,iPhone 11,iPhone 11 Pro,iPhone 11 Pro Max,iPhone SE 2020,iPhone 12,iPhone 12 mini,iPhone 12 Pro,iPhone 12 Pro Max,iPhone 13,iPhone 13 mini,iPhone 13 Pro,iPhone 13 Pro Max,iPhone SE 2022,iPhone 14,iPhone 14 Plus,iPhone 14 Pro,iPhone 14 Pro Max,iPhone 15,iPhone 15 Plus,iPhone 15 Pro,iPhone 15 Pro Max,iPhone 16,iPhone 16 Plus,iPhone 16 Pro,iPhone 16 Pro Max,iPhone 16e,iPhone 17,iPhone 17 Air,iPhone 17 Pro,iPhone 17 Pro Max"
+    }
+}
+
+def _preset_for_model(platform, brand, model):
+    m=(brand+' '+model).lower()
+    h=int(hashlib.sha256(m.encode('utf-8')).hexdigest()[:8],16)
+    d=(h % 7) - 3
+    if platform == 'ios':
+        if 'pro max' in m: base=(176,171,161,151,96,140,46)
+        elif 'pro' in m: base=(178,173,163,153,97,141,46)
+        elif any(x in m for x in ('se','mini','xr','xs','11','12')): base=(184,179,169,158,100,145,48)
+        else: base=(180,175,165,155,98,142,47)
+    elif any(x in m for x in ('rog phone','redmagic','legion','black shark','gt 7','gt 6','s25','s26','s24 ultra','s23 ultra','pixel 10','pixel 9 pro')):
+        base=(176,171,161,151,94,140,46)
+    elif any(x in m for x in ('a0','c1','c2','c3','spark go','hot 10','hot 11','nokia c','itel a','moto e','blade a3','blade a5')):
+        base=(194,187,177,165,109,172,52)
+    elif any(x in m for x in ('pro','ultra','plus','t pro','x pro','note 13 pro','note 14 pro','poco f','poco x6','poco x7')):
+        base=(183,177,167,156,99,145,49)
+    else:
+        base=(188,182,172,160,105,150,50)
+    vals=[base[0]+d, base[1]+d, base[2]+d, base[3]+d, base[4], base[5]+d, base[6]]
+    vals[0]=max(0,min(200,vals[0])); vals[1]=max(0,min(200,vals[1])); vals[2]=max(0,min(200,vals[2])); vals[3]=max(0,min(200,vals[3])); vals[5]=max(0,min(200,vals[5]))
+    return tuple(vals)
+
+DEFAULT_FF_SETTINGS = []
+for _platform, _brands in PHONE_CATALOG.items():
+    for _brand, _models in _brands.items():
+        for _model in [x.strip() for x in _models.split(',') if x.strip()]:
+            DEFAULT_FF_SETTINGS.append((_platform, _brand, _model, *_preset_for_model(_platform, _brand, _model)))
+
+def seed_ff_settings():
+    with db() as conn:
+        for row in DEFAULT_FF_SETTINGS:
+            conn.execute("""INSERT OR IGNORE INTO ff_settings
+                (platform,brand,model,general,red_dot,scope_2x,scope_4x,sniper,free_look,fire_button,created_at,updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""", row + (datetime.now().isoformat(), datetime.now().isoformat()))
+        conn.commit()
+
+def get_ff_platforms():
+    with db() as conn:
+        return conn.execute("SELECT DISTINCT platform FROM ff_settings ORDER BY CASE platform WHEN 'android' THEN 1 WHEN 'ios' THEN 2 ELSE 3 END").fetchall()
+
+def get_ff_brands(platform):
+    with db() as conn:
+        return conn.execute("SELECT DISTINCT brand FROM ff_settings WHERE platform=? ORDER BY brand", (platform,)).fetchall()
+
+def get_ff_models(platform, brand):
+    with db() as conn:
+        return conn.execute("SELECT * FROM ff_settings WHERE platform=? AND brand=? ORDER BY model", (platform, brand)).fetchall()
+
+def get_ff_setting(setting_id):
+    with db() as conn:
+        return conn.execute("SELECT * FROM ff_settings WHERE id=?", (setting_id,)).fetchone()
+
+def add_ff_setting(platform, brand, model, values):
+    now=datetime.now().isoformat()
+    with db() as conn:
+        conn.execute("""INSERT INTO ff_settings
+            (platform,brand,model,general,red_dot,scope_2x,scope_4x,sniper,free_look,fire_button,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(platform,brand,model) DO UPDATE SET
+              general=excluded.general, red_dot=excluded.red_dot, scope_2x=excluded.scope_2x,
+              scope_4x=excluded.scope_4x, sniper=excluded.sniper, free_look=excluded.free_look,
+              fire_button=excluded.fire_button, updated_at=excluded.updated_at""",
+            (platform, brand, model, *values, now, now))
+        conn.commit()
+
+def delete_ff_setting(setting_id):
+    with db() as conn:
+        conn.execute("DELETE FROM ff_settings WHERE id=?", (setting_id,))
+        conn.commit()
+
+def all_ff_settings():
+    with db() as conn:
+        return conn.execute("SELECT * FROM ff_settings ORDER BY platform, brand, model").fetchall()
+
+# ============================================================
 # DANATER FREE FIRE BOT — PART 2/6
 # ============================================================
 
