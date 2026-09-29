@@ -1664,6 +1664,424 @@ async def handle_photo(update, context):
     cname = context.user_data.get("customer_name")
     pm = context.user_data.get("payment_method")
     final = context.user_data.get("final_price")
+# ============================================================
+# DANATER FREE FIRE BOT — PART 5/6
+# ============================================================
+
+# ============================================================
+# FREE FIRE API — ГИРИФТАНИ МАЪЛУМОТИ АККАУНТ
+# ============================================================
+
+async def get_free_fire_player_info(uid):
+    """
+    Гирифтани маълумоти аккаунти Free Fire аз API-ҳои гуногун.
+    Ҳар як API санҷида мешавад, то яке кор кунад.
+    """
+    
+    # Рӯйхати API-ҳо (яке аз онҳо кор мекунад)
+    api_urls = [
+        # 1. Leak Studio BD (беҳтарин — аксар вақт кор мекунад)
+        f"https://api.leakstudiobd.com/info?uid={uid}&region=sg&key=@leakstudiobd",
+        
+        # 2. FF Community API (расмӣ)
+        f"https://developers.freefirecommunity.com/api/v1/info?uid={uid}&region=sg",
+        
+        # 3. ARBAKTI Free Fire API
+        f"https://api.arbakti.dev/freefire/player/{uid}",
+        
+        # 4. HL Gaming Official
+        f"https://proapis.hlgamingofficial.com/main/games/freefire/validation/api?useruid={uid}&region=SG",
+        
+        # 5. Garena Check
+        f"https://ff.garena.com/api/antilist/check?uid={uid}",
+        
+        # 6. isan.eu.org
+        f"https://api.isan.eu.org/nickname/ff?id={uid}",
+    ]
+    
+    def _request(url):
+        """Дархост ба API бо User-Agent"""
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Connection": "keep-alive",
+        })
+        with urllib.request.urlopen(req, timeout=10) as response:
+            raw = response.read().decode("utf-8")
+            return json.loads(raw)
+    
+    for url in api_urls:
+        try:
+            data = await __import__("asyncio").to_thread(_request, url)
+            
+            if not isinstance(data, dict):
+                continue
+            
+            # ===== Ҷустуҷӯи nickname =====
+            nickname = (
+                data.get("nickname") or 
+                data.get("name") or 
+                data.get("AccountName") or
+                data.get("accountName") or
+                data.get("nick_name") or
+                data.get("nickName") or
+                data.get("username") or
+                data.get("basicInfo", {}).get("nickname") or
+                data.get("basicInfo", {}).get("name") or
+                data.get("data", {}).get("nickname") or
+                data.get("data", {}).get("name") or
+                data.get("result", {}).get("nickname") or
+                data.get("result", {}).get("name") or
+                data.get("player", {}).get("nickname") or
+                data.get("player", {}).get("name")
+            )
+            
+            # ===== Ҷустуҷӯи level =====
+            level = (
+                data.get("level") or 
+                data.get("AccountLevel") or
+                data.get("accountLevel") or
+                data.get("basicInfo", {}).get("level") or
+                data.get("data", {}).get("level") or
+                data.get("result", {}).get("level") or
+                data.get("player", {}).get("level") or
+                0
+            )
+            
+            # ===== Ҷустуҷӯи region =====
+            region = (
+                data.get("region") or 
+                data.get("AccountRegion") or
+                data.get("accountRegion") or
+                data.get("basicInfo", {}).get("region") or
+                data.get("data", {}).get("region") or
+                data.get("result", {}).get("region") or
+                data.get("player", {}).get("region") or
+                "SG"
+            )
+            
+            if nickname:
+                logger.info(f"✅ Free Fire info found from: {url}")
+                return {
+                    "uid": str(uid),
+                    "nickname": str(nickname),
+                    "level": level,
+                    "region": str(region)
+                }
+        
+        except Exception as ex:
+            logger.warning(f"❌ API failed: {url} → {ex}")
+            continue
+    
+    logger.error(f"❌ Ҳамаи API-ҳо барои UID {uid} кор накарданд")
+    return None
+
+
+# ============================================================
+# TEXT HANDLER
+# ============================================================
+
+async def handle_text(update, context):
+    user = update.effective_user
+    if not user:
+        return
+    save_user(user)
+    state = context.user_data.get("state")
+
+    # ============================================================
+    # ADMIN: edit price
+    # ============================================================
+    if is_admin(user.id) and state == "edit_price":
+        pid = context.user_data.get("edit_price_id")
+        raw = update.message.text.strip()
+        if not raw.isdigit():
+            await update.message.reply_text("❌ Танҳо рақам."); return
+        price = int(raw)
+        if price < 0 or price > 1000000:
+            await update.message.reply_text("❌ Нарх нодуруст."); return
+        update_price(pid, price)
+        context.user_data.clear()
+        await update.message.reply_text(f"✅ Нархи нав: <b>{price} сомонӣ</b>", reply_markup=admin_menu(), parse_mode=ParseMode.HTML)
+        return
+
+    # ============================================================
+    # ADMIN: search user
+    # ============================================================
+    if is_admin(user.id) and state == "admin_user_search_id":
+        raw = update.message.text.strip()
+        if not raw.isdigit():
+            await update.message.reply_text("❌ Telegram ID бояд рақам бошад."); return
+        target_id = int(raw)
+        target = get_user(target_id)
+        if not target:
+            await update.message.reply_text("❌ Корбар ёфт нашуд.", reply_markup=admin_menu())
+            context.user_data.clear(); return
+        context.user_data["admin_target_user_id"] = target_id
+        context.user_data["state"] = "admin_user_search_message"
+        uname = f"@{target['username']}" if target["username"] else "—"
+        await update.message.reply_text(
+            f"👤 <b>КОРБАР ЁФТ ШУД</b>\n\n🆔 <code>{target['id']}</code>\n👤 {e(uname)}\n💰 {money(target['balance'])} сомонӣ\n\n✉️ Матнро нависед:",
+            reply_markup=admin_back(), parse_mode=ParseMode.HTML)
+        return
+
+    if is_admin(user.id) and state == "admin_user_search_message":
+        text = update.message.text.strip()
+        target_id = context.user_data.get("admin_target_user_id")
+        if not target_id:
+            context.user_data.clear()
+            await update.message.reply_text("❌ Сессия гузашт.", reply_markup=admin_menu()); return
+        try:
+            await context.bot.send_message(chat_id=int(target_id), text=text, parse_mode=ParseMode.HTML)
+            context.user_data.clear()
+            await update.message.reply_text(f"✅ Паём ба <code>{target_id}</code> фиристода шуд.", reply_markup=admin_menu(), parse_mode=ParseMode.HTML)
+        except TelegramError as ex:
+            context.user_data.clear()
+            await update.message.reply_text(f"❌ Паём нарасид.\n<code>{e(str(ex))}</code>", reply_markup=admin_menu(), parse_mode=ParseMode.HTML)
+        return
+
+    # ============================================================
+    # ADMIN: broadcast
+    # ============================================================
+    if is_admin(user.id) and state == "broadcast":
+        text = update.message.text.strip()
+        if not text: return
+        context.user_data.clear()
+        ids = all_user_ids()
+        sent, failed = 0, 0
+        await update.message.reply_text("📢 Рассылка оғоз шуд...")
+        for uid in ids:
+            try:
+                await context.bot.send_message(chat_id=uid, text=text, parse_mode=ParseMode.HTML)
+                sent += 1
+            except TelegramError:
+                failed += 1
+        await update.message.reply_text(f"📢 Анҷом:\n✅ {sent}\n❌ {failed}", parse_mode=ParseMode.HTML)
+        return
+
+    # ============================================================
+    # ADMIN: add FF setting
+    # ============================================================
+    if is_admin(user.id) and state == "ff_setting_add":
+        parts=[x.strip() for x in update.message.text.strip().split("|")]
+        if len(parts) != 10:
+            await update.message.reply_text("❌ Формат нодуруст.", reply_markup=admin_back(), parse_mode=ParseMode.HTML); return
+        platform,brand,model,*nums=parts
+        platform=platform.lower()
+        if platform not in {"android","ios"} or not brand or not model:
+            await update.message.reply_text("❌ Platform android ё ios."); return
+        try: values=[int(x) for x in nums]
+        except ValueError:
+            await update.message.reply_text("❌ Ҳамаи 7 параметр рақам бошанд."); return
+        if not all(0 <= x <= 200 for x in values[:6]) or not 1 <= values[6] <= 100:
+            await update.message.reply_text("❌ Sensitivity: 0–200, Fire: 1–100%."); return
+        add_ff_setting(platform,brand,model,values)
+        context.user_data.clear()
+        await update.message.reply_text(f"✅ Настройка илова шуд!\n📱 {e(brand)} {e(model)}", reply_markup=admin_menu(), parse_mode=ParseMode.HTML)
+        return
+
+    # ============================================================
+    # ADMIN: promo new
+    # ============================================================
+    if is_admin(user.id) and state == "promo_new":
+        parts = update.message.text.strip().split()
+        if len(parts) < 2:
+            await update.message.reply_text("❌ Формат: КОД ПРОЦЕНТ [МАКС]"); return
+        try:
+            code = parts[0].upper()
+            percent = int(parts[1])
+            max_uses = int(parts[2]) if len(parts) > 2 else 0
+            if not (1 <= percent <= 90): raise ValueError
+        except ValueError:
+            await update.message.reply_text("❌ Рақамҳо нодуруст."); return
+        create_promo(code, percent, max_uses)
+        context.user_data.clear()
+        await update.message.reply_text(f"✅ Промокод <b>{e(code)}</b> илова шуд ({percent}%).", reply_markup=admin_menu(), parse_mode=ParseMode.HTML)
+        return
+
+    # ============================================================
+    # ADMIN: add product
+    # ============================================================
+    if is_admin(user.id) and state == "add_product":
+        parts = [x.strip() for x in update.message.text.strip().split("|")]
+        if len(parts) != 4:
+            await update.message.reply_text("❌ Формат: <code>ID | НОМ | НАРХ | КАТЕГОРИЯ</code>", parse_mode=ParseMode.HTML); return
+        pid, name, price_s, cat = parts
+        if cat not in CATEGORIES:
+            await update.message.reply_text("❌ Категория: diamond / voucher / pass"); return
+        try:
+            price = float(price_s)
+            if price <= 0: raise ValueError
+        except ValueError:
+            await update.message.reply_text("❌ Нарх нодуруст."); return
+        add_product(pid, name, price, cat)
+        context.user_data.clear()
+        await update.message.reply_text(f"✅ Маҳсулоти нав илова шуд!\n📦 {e(name)}\n💰 {money(price)} сомонӣ", reply_markup=admin_menu(), parse_mode=ParseMode.HTML)
+        return
+
+    # ============================================================
+    # USER: promo activation
+    # ============================================================
+    if state == "promo_user":
+        code=update.message.text.strip().upper()
+        p=get_promo(code)
+        if not p:
+            await update.message.reply_text("❌ Промокод ёфт нашуд."); return
+        if p["max_uses"] and p["used"] >= p["max_uses"]:
+            await update.message.reply_text("❌ Промокод тамом шуд."); return
+        context.user_data["promo"]={"code":p["code"],"discount_percent":p["discount_percent"]}
+        context.user_data.pop("state",None)
+        await update.message.reply_text(f"✅ Промокод <b>{e(p['code'])}</b> фаъол шуд!", reply_markup=main_menu(update.effective_user.id), parse_mode=ParseMode.HTML)
+        return
+
+    # ============================================================
+    # USER: account sale flow
+    # ============================================================
+    if state == "account_ffid":
+        v=update.message.text.strip()
+        if not v.isdigit() or not (5<=len(v)<=20):
+            await update.message.reply_text("❌ FF ID нодуруст."); return
+        context.user_data["account_ff_id"]=v; context.user_data["state"]="account_torsy"
+        await update.message.reply_text("👕 <b>Торсы чандто?</b>", reply_markup=account_cancel_kb(), parse_mode=ParseMode.HTML); return
+    if state == "account_torsy":
+        context.user_data["account_torsy"]=update.message.text.strip(); context.user_data["state"]="account_emotions"
+        await update.message.reply_text("😎 <b>Эмоцияҳо чандто?</b>", reply_markup=account_cancel_kb(), parse_mode=ParseMode.HTML); return
+    if state == "account_emotions":
+        context.user_data["account_emotions"]=update.message.text.strip(); context.user_data["state"]="account_binding"
+        await update.message.reply_text("🔗 <b>Привязка:</b>", reply_markup=account_cancel_kb(), parse_mode=ParseMode.HTML); return
+    if state == "account_binding":
+        context.user_data["account_binding"]=update.message.text.strip(); context.user_data["state"]="account_evolutions"
+        await update.message.reply_text("⚡ <b>Эволюцияҳо чандто?</b>", reply_markup=account_cancel_kb(), parse_mode=ParseMode.HTML); return
+    if state == "account_evolutions":
+        context.user_data["account_evolutions"]=update.message.text.strip(); context.user_data["state"]="account_price"
+        await update.message.reply_text("💰 <b>Нарх бо сомонӣ:</b>", reply_markup=account_cancel_kb(), parse_mode=ParseMode.HTML); return
+    if state == "account_price":
+        raw=update.message.text.strip().replace(",", ".")
+        try: price=float(raw)
+        except ValueError:
+            await update.message.reply_text("❌ Нарх нодуруст."); return
+        if price<=0 or price>1000000:
+            await update.message.reply_text("❌ Нарх нодуруст."); return
+        context.user_data["account_price"]=price; context.user_data["state"]="account_owner"
+        await update.message.reply_text("👤 <b>Номи владелец:</b>", reply_markup=account_cancel_kb(), parse_mode=ParseMode.HTML); return
+    if state == "account_owner":
+        owner=update.message.text.strip()
+        if not owner:
+            await update.message.reply_text("❌ Ном холӣ."); return
+        context.user_data["account_owner"]=owner; context.user_data["state"]="account_submit"
+        await update.message.reply_text("🛡 <b>Гарант:</b> @ffxdavlatov\n\nМаълумот тайёр аст.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📤 Фиристодан ба админ", callback_data="account:submit")],[InlineKeyboardButton("❌ Бекор", callback_data="cancel_account")]]), parse_mode=ParseMode.HTML); return
+
+    # ============================================================
+    # USER: search
+    # ============================================================
+    if state == "search":
+        query = update.message.text.strip()
+        context.user_data.pop("state", None)
+        results = search_products(query)
+        if not results:
+            await update.message.reply_text("❌ Ҳеҷ чиз ёфт нашуд.", reply_markup=shop_menu()); return
+        rows = []
+        for p in results[:20]:
+            rows.append([InlineKeyboardButton(f"{p['name']} — {money(p['price'])} с.", callback_data=f"buy:{p['id']}")])
+        rows.append([InlineKeyboardButton("⬅️ Бозгашт", callback_data="shop")])
+        await update.message.reply_text(f"🔎 Натиҷа барои «{e(query)}»:", reply_markup=InlineKeyboardMarkup(rows), parse_mode=ParseMode.HTML)
+        return
+
+    if not await require_sub(update, context):
+        return
+
+    # ============================================================
+    # USER: FF ID (муҳимтарин қисм)
+    # ============================================================
+    if state == "waiting_ffid":
+        ffid = update.message.text.strip()
+        if not ffid.isdigit() or not (5 <= len(ffid) <= 20):
+            await update.message.reply_text("❌ FF ID нодуруст. Танҳо рақам."); return
+
+        await update.message.reply_text(
+            "🔎 <b>Маълумоти аккаунт санҷида шуда истодааст...</b>",
+            parse_mode=ParseMode.HTML)
+
+        info = await get_free_fire_player_info(ffid)
+
+        if not info:
+            await update.message.reply_text(
+                "❌ <b>Аккаунт ёфт нашуд.</b>\n\n"
+                "Лутфан ID-и дурусти Free Fire-ро фиристед.\n"
+                "Мисол: <code>123456789</code>",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔄 Иваз кардани ID", callback_data="ffid_change")],
+                    [InlineKeyboardButton("❌ Бекор", callback_data="cancel_order")]
+                ]),
+                parse_mode=ParseMode.HTML)
+            return
+
+        context.user_data["ffid"] = ffid
+        context.user_data["ff_player_info"] = info
+        context.user_data["state"] = "confirm_ffid"
+
+        await update.message.reply_text(
+            f"🎮 <b>МАЪЛУМОТИ FREE FIRE</b>\n\n"
+            f"🆔 UID: <code>{e(ffid)}</code>\n"
+            f"👤 Ник: <b>{e(info['nickname'])}</b>\n"
+            f"⭐ Уровень: <b>{e(info['level'])}</b>\n"
+            f"🌍 Регион: <b>{e(info['region'])}</b>\n\n"
+            "Ин маълумот дуруст аст?",
+            reply_markup=ff_id_confirm_keyboard(),
+            parse_mode=ParseMode.HTML)
+        return
+
+    # ============================================================
+    # USER: name
+    # ============================================================
+    if state == "waiting_name":
+        name = update.message.text.strip()
+        if not (2 <= len(name) <= 100):
+            await update.message.reply_text("❌ Ном нодуруст."); return
+        context.user_data["customer_name"] = name
+        context.user_data["state"] = "waiting_payment"
+        u = get_user(user.id)
+        bal = u["balance"] if u else 0
+        await update.message.reply_text(
+            "💳 <b>Усули пардохтро интихоб кунед:</b>",
+            reply_markup=payment_keyboard(bal), parse_mode=ParseMode.HTML)
+        return
+
+
+# ============================================================
+# PHOTO HANDLER
+# ============================================================
+
+async def handle_photo(update, context):
+    user = update.effective_user
+    if not user: return
+    save_user(user)
+    if not await require_sub(update, context): return
+
+    # ============================================================
+    # USER: account sale photos
+    # ============================================================
+    if context.user_data.get("state") == "account_photos":
+        pid=update.message.photo[-1].file_id
+        photos=context.user_data.setdefault("account_photos",[])
+        if len(photos)>=10:
+            await update.message.reply_text("❌ Максимум 10 сурат.", reply_markup=account_photos_done_kb()); return
+        photos.append(pid)
+        await update.message.reply_text(f"📸 Сурат қабул шуд: <b>{len(photos)}/10</b>", reply_markup=account_photos_done_kb(), parse_mode=ParseMode.HTML)
+        return
+
+    # ============================================================
+    # USER: receipt
+    # ============================================================
+    if context.user_data.get("state") != "waiting_receipt":
+        await update.message.reply_text("ℹ️ Аввал маҳсулотро интихоб кунед.", reply_markup=main_menu(update.effective_user.id))
+        return
+
+    pid = context.user_data.get("product_id")
+    ffid = context.user_data.get("ffid")
+    cname = context.user_data.get("customer_name")
+    pm = context.user_data.get("payment_method")
+    final = context.user_data.get("final_price")
     discount = context.user_data.get("discount", 0)
     promo = context.user_data.get("promo")
     p = get_product(pid) if pid else None
@@ -1719,7 +2137,6 @@ async def handle_photo(update, context):
         f"💰 {money(final)} сомонӣ\n"
         f"🧾 ID: <code>{order_id}</code>",
         reply_markup=main_menu(update.effective_user.id), parse_mode=ParseMode.HTML)
-
 # ============================================================
 # DANATER FREE FIRE BOT — PART 6/6
 # ============================================================
