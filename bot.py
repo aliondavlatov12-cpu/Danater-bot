@@ -1646,17 +1646,44 @@ async def handle_text(update, context):
         return
 
     # USER: FF ID
-    if state == "waiting_ffid":
-        ffid = update.message.text.strip()
-        if not ffid.isdigit() or not (5 <= len(ffid) <= 20):
-            await update.message.reply_text("❌ FF ID нодуруст."); return
+if state == "waiting_ffid":
+    ffid = update.message.text.strip()
+    if not ffid.isdigit() or not (5 <= len(ffid) <= 20):
+        await update.message.reply_text("❌ FF ID нодуруст. Танҳо рақам.")
+        return
 
-        await update.message.reply_text("🔎 <b>Маълумоти аккаунт санҷида шуда истодааст...</b>", parse_mode=ParseMode.HTML)
-        info = await get_free_fire_player_info(ffid)
-        if not info:
-            await update.message.reply_text(
-                "❌ <b>Аккаунт ёфт нашуд ё маълумоти он дастрас нест.</b>\n\n"
+    await update.message.reply_text(
+        "🔎 <b>Маълумоти аккаунт санҷида шуда истодааст...</b>",
+        parse_mode=ParseMode.HTML)
 
+    info = await get_free_fire_player_info(ffid)
+
+    if not info:
+        await update.message.reply_text(
+            "❌ <b>Аккаунт ёфт нашуд ё маълумоти он дастрас нест.</b>\n\n"
+            "Лутфан ID-и дурусти Free Fire-ро фиристед.\n"
+            "Мисол: <code>123456789</code>",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔄 Иваз кардани ID", callback_data="ffid_change")],
+                [InlineKeyboardButton("❌ Бекор", callback_data="cancel_order")]
+            ]),
+            parse_mode=ParseMode.HTML)
+        return
+
+    context.user_data["ffid"] = ffid
+    context.user_data["ff_player_info"] = info
+    context.user_data["state"] = "confirm_ffid"
+
+    await update.message.reply_text(
+        "🎮 <b>МАЪЛУМОТИ FREE FIRE</b>\n\n"
+        f"🆔 ID: <code>{e(ffid)}</code>\n"
+        f"👤 Номи аккаунт: <b>{e(info['nickname'])}</b>\n"
+        f"⭐ Уровень: <b>{e(info['level'])}</b>\n"
+        f"🌍 Регион: <b>{e(info['region'])}</b>\n\n"
+        "Ин маълумот дуруст аст?",
+        reply_markup=ff_id_confirm_keyboard(),
+        parse_mode=ParseMode.HTML)
+    return
 # ============================================================
 # DANATER FREE FIRE BOT — PART 5/6
 # ============================================================
