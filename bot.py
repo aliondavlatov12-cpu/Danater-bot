@@ -1379,28 +1379,80 @@ async def notify_admin_new_order(context, order, user):
 # TEXT HANDLER
 # ============================================================
 async def get_free_fire_player_info(uid):
-    """Get basic Free Fire account info by UID. Region is detected automatically."""
-    url = "https://api2.nftoken.info/checkbanned?id=" + urllib.parse.quote(str(uid), safe="")
-
-    def _request():
-        req = urllib.request.Request(url, headers={"User-Agent": "DanaterShop/1.0"})
-        with urllib.request.urlopen(req, timeout=8) as response:
+    """Гирифтани маълумоти аккаунти Free Fire"""
+    
+    api_urls = [
+        # 1. Leak Studio BD (беҳтарин)
+        f"https://api.leakstudiobd.com/info?uid={uid}&region=sg&key=@leakstudiobd",
+        
+        # 2. isan.eu.org
+        f"https://api.isan.eu.org/nickname/ff?id={uid}",
+        
+        # 3. Garena
+        f"https://ff.garena.com/api/antilist/check?uid={uid}",
+        
+        # 4. ARBAKTI
+        f"https://api.arbakti.dev/freefire/player/{uid}",
+        
+        # 5. HL Gaming
+        f"https://proapis.hlgamingofficial.com/main/games/freefire/validation/api?useruid={uid}&region=SG",
+    ]
+    
+    def _request(url):
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json",
+        })
+        with urllib.request.urlopen(req, timeout=10) as response:
             return json.loads(response.read().decode("utf-8"))
-
-    try:
-        data = await __import__("asyncio").to_thread(_request)
-        if not isinstance(data, dict):
-            return None
-        nickname = data.get("nickname") or data.get("AccountName") or data.get("accountName")
-        level = data.get("level") or data.get("AccountLevel") or data.get("accountLevel")
-        region = data.get("region") or data.get("AccountRegion") or data.get("accountRegion")
-        player_id = data.get("player_id") or data.get("uid") or data.get("accountId")
-        if not nickname or level is None or not region:
-            return None
-        return {"uid": str(player_id or uid), "nickname": str(nickname), "level": level, "region": str(region)}
-    except Exception as ex:
-        logger.warning("Free Fire UID lookup failed: %s", ex)
-        return None
+    
+    for url in api_urls:
+        try:
+            data = await __import__("asyncio").to_thread(_request, url)
+            
+            if not isinstance(data, dict):
+                continue
+            
+            nickname = (
+                data.get("nickname") or 
+                data.get("name") or 
+                data.get("AccountName") or
+                data.get("basicInfo", {}).get("nickname") or
+                data.get("data", {}).get("nickname") or
+                data.get("result", {}).get("nickname")
+            )
+            
+            level = (
+                data.get("level") or 
+                data.get("AccountLevel") or
+                data.get("basicInfo", {}).get("level") or
+                data.get("data", {}).get("level") or
+                data.get("result", {}).get("level") or
+                "—"
+            )
+            
+            region = (
+                data.get("region") or 
+                data.get("AccountRegion") or
+                data.get("basicInfo", {}).get("region") or
+                data.get("data", {}).get("region") or
+                data.get("result", {}).get("region") or
+                "SG"
+            )
+            
+            if nickname:
+                logger.info(f"Free Fire info found from: {url}")
+                return {
+                    "uid": str(uid),
+                    "nickname": str(nickname),
+                    "level": level,
+                    "region": str(region)
+                }
+        except Exception as ex:
+            logger.warning(f"API failed: {url} → {ex}")
+            continue
+    
+    return None
 
 
 async def handle_text(update, context):
