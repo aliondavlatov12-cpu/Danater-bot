@@ -2082,8 +2082,16 @@ async def handle_photo(update, context):
     create_order(order)
     if promo: use_promo(promo["code"])
     if referred_by:
-        bonus = give_referral_bonus(referred_by, final, REF_BONUS_PERCENT)
-        if bonus > 0:
+    bonus = give_referral_bonus(referred_by, final, REF_BONUS_PERCENT)
+    if bonus > 0:
+        try:
+            await context.bot.send_message(
+                chat_id=referred_by,
+                text=f"💰 <b>+{money(bonus)} сомонӣ</b> ба баланси шумо!",
+                parse_mode=ParseMode.HTML
+            )
+        except TelegramError:
+            pass
 # ============================================================
 # PHOTO HANDLER
 # ============================================================
