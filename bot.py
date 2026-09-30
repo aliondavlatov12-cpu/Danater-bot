@@ -47,7 +47,7 @@ DC_NUMBER          = os.getenv("DC_NUMBER", "+992783836464")
 
 INSTAGRAM_URL      = os.getenv("INSTAGRAM_URL", "https://www.instagram.com/danatershop.tj")
 TELEGRAM_ADMIN_URL = os.getenv("TELEGRAM_ADMIN_URL", "https://t.me/ffxdavlatov")
-SUPPORT_BOT_USERNAME = os.getenv("SUPPORT_BOT_USERNAME", "DanaterShopSupportBot").lstrip("@")
+SUPPORT_BOT_USERNAME = os.getenv("SUPPORT_BOT_USERNAME", "DanaterShop_SupportBot").lstrip("@")
 SUPPORT_BOT_URL = os.getenv("SUPPORT_BOT_URL", f"https://t.me/{SUPPORT_BOT_USERNAME}")
 
 PORT = int(os.getenv("PORT", "10000"))
