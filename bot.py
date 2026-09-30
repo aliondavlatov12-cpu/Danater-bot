@@ -2081,7 +2081,7 @@ async def handle_photo(update, context):
     }
     create_order(order)
     if promo: use_promo(promo["code"])
-    if referred_by:
+if referred_by:
     bonus = give_referral_bonus(referred_by, final, REF_BONUS_PERCENT)
     if bonus > 0:
         try:
